@@ -24,7 +24,7 @@ class link(commands.Cog):
             await ctx.send(embed = embed)
             return
         if str(dis) == str(ctx.author):
-            with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'r') as file:
+            with open(os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))).replace('\\Cogs', ''), 'Config', 'assets', 'linked.txt'), 'r') as file:
                 all = file.readlines()
             uuid = requests.get(f'https://api.mojang.com/users/profiles/minecraft/{name}').json()['id']
             ctxid = ctx.author.id
