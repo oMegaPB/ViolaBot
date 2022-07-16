@@ -18,7 +18,7 @@ class stats(commands.Cog):
         done = False
         if not username:
             try:
-                with open(os.path.dirname(os.path.realpath(__file__)).replace('\\Cogs', '') + '/Config/assets/linked.txt', 'r') as file:
+                with open(r'app/Cogs/Config/assets/linked.txt', 'r') as file:
                     all = file.readlines()
                 for i in all:
                     i = str(i).replace("'", '"').replace("\n", '')
