@@ -14,7 +14,7 @@ def guild_based_prefix(bot, message: discord.Message):
 bot = commands.Bot(case_insensitive=True, command_prefix=guild_based_prefix, intents=intents, owner_id=728165963480170567, strip_after_prefix=True)
 bot.remove_command("help")
 async def loadcogs():
-    for filename in os.listdir(os.path.dirname(os.path.realpath(__file__)) + '\\Cogs'):
+    for filename in os.listdir(os.path.dirname(os.path.realpath(__file__)) + '/Cogs'):
         if filename.endswith(".py"):
             await bot.load_extension(fr"Cogs.{filename[:-3]}")
 asyncio.run(loadcogs())
