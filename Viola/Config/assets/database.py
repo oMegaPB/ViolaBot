@@ -3,7 +3,7 @@ import os, json
 class DataBase:
     def __init__(self, name: str):
         self._name = name
-        self._path = os.path.join(os.path.dirname(os.path.realpath(__file__)) + '\\', f'{self._name}.txt')
+        self._path = os.path.join(os.path.dirname(os.path.realpath(__file__)) + '/', f'{self._name}.txt')
         if not os.path.exists(self._path):
             raise RuntimeError(f'Cannot find {self._name}')
 
