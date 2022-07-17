@@ -59,6 +59,8 @@ class events(commands.Cog):
         elif before.channel is not None and after.channel is None:
             print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} покинул канал {before.channel.name} | {before.channel.guild.name}')
         elif before.channel is not None and after.channel is not None:
+            if before.channel.name == after.channel.name:
+                return
             print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} перешёл в канал {after.channel.name} из {before.channel.name} | {before.channel.guild.name}')
 
     @commands.Cog.listener()
