@@ -3,16 +3,25 @@ import discord, os, requests, json, datetime, sys, asyncio, traceback, random
 from discord.ext import commands
 from discord.ext.commands import has_permissions
 from discord.ext.commands.errors import ExtensionNotLoaded
-from Config.settings import token
+from Config.settings import token_beta, token
+from Config.assets.database import DataBase
 from aiohttp.client_exceptions import ClientConnectorError
 intents = discord.Intents().all()
 
-guild_pref = {814402686157193236: "?"}
 def guild_based_prefix(bot, message: discord.Message):
-    return guild_pref.get(message.guild.id, "s!")
+    txt = DataBase('prefixes')
+    res = txt.fetch('guildid', message.guild.id)
+    if res['success'] == 'True':
+        msg = res['value'].replace("'", '"').replace('\n', '')
+        msg = json.loads(msg)
+        prefix = str(msg['prefix'])
+        return [prefix, prefix.capitalize(), prefix.upper(), prefix.lower(), 's!', 'S!']
+    else:
+        return ['s!', 'S!']
 
 bot = commands.Bot(case_insensitive=True, command_prefix=guild_based_prefix, intents=intents, owner_id=728165963480170567, strip_after_prefix=True)
 bot.remove_command("help")
+
 async def loadcogs():
     for filename in os.listdir(os.path.dirname(os.path.realpath(__file__)) + '/Cogs'):
         if filename.endswith(".py"):

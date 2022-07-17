@@ -1,4 +1,5 @@
 import os, json
+from re import L
 
 class DataBase:
     def __init__(self, name: str):
@@ -43,28 +44,37 @@ class DataBase:
     def _clear(self):
         with open(self._path, 'r', encoding='utf-8') as file:
             lines = file.readlines()
+            ln = len(lines)
             with open(self._path, 'w', encoding='utf-8') as f:
                 lines = set(lines)
+                lin = len(lines)
                 for i in lines:
                     f.write(i)
-    def add(self, data, check_arg):
-        self._clear()
+        if ln > lin:
+            return 1
+        return 0
+    def add(self, data, *check_arg):
         end_data = ''
         replaced = False
         added = False
         data = json.loads(str(data).replace('\n', '').replace("'", '"'))
-        for i in self._getobjects():
-            if json.loads(str(i).replace('\n', '').replace("'", '"'))[check_arg] == data[check_arg]:
-                end_data += str(data) + '\n'
-                replaced = True
-            else:
-                end_data += str(i) + '\n'
+        if check_arg:
+            for i in self._getobjects():
+                if json.loads(str(i).replace('\n', '').replace("'", '"'))[check_arg[0]] == data[check_arg[0]]:
+                    end_data += str(data) + '\n'
+                    replaced = True
+                else:
+                    end_data += str(i) + '\n'
         if not replaced:
+            if not check_arg:
+                for i in self._getobjects():
+                    end_data += str(i) + '\n'
             end_data += str(data) + '\n'
             added = True
         with open(self._path, 'w', encoding='utf-8') as f:
             f.write(end_data)
-        return {"replaced": str(replaced), "added": str(added)}
+        res = self._clear()
+        return {"replaced": str(replaced), "added": str(added), 'cleared': res}
 
     def fetch(self, param, check_value):
         self._clear()
@@ -72,6 +82,19 @@ class DataBase:
             i = json.loads(str(i).replace('\n', '').replace("'", '"'))
             if str(i[param]) == str(check_value):
                 return {'success': 'True', 'value': str(i)}
+        return {'success': 'False'}
+
+    def fetchl(self, param, check_value):
+        self._clear()
+        lst = []
+        appended = False
+        for i in self._getobjects():
+            i = json.loads(str(i).replace('\n', '').replace("'", '"'))
+            if str(i[param]) == str(check_value):
+                lst.append(str(i))
+                appended = True
+        if appended:
+            return {'success': 'True', 'value': lst}
         return {'success': 'False'}
     
     def remove(self, key, value):

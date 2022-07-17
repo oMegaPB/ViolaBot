@@ -2,7 +2,6 @@ import discord, requests, json, datetime, os
 from discord.ext import commands
 from discord.ext.commands.errors import CommandNotFound
 from Config.settings import apikey
-
 def getDiscord(username):
     try:
         try:
@@ -24,7 +23,7 @@ class link(commands.Cog):
             await ctx.send(embed = embed)
             return
         if str(dis) == str(ctx.author):
-            with open(os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))).replace('Cogs', ''), 'Config', 'assets', 'linked.txt'), 'r') as file:
+            with open(os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))).replace('\\Cogs', ''), 'Config', 'assets', 'linked.txt'), 'r') as file:
                 all = file.readlines()
             uuid = requests.get(f'https://api.mojang.com/users/profiles/minecraft/{name}').json()['id']
             ctxid = ctx.author.id
@@ -34,7 +33,7 @@ class link(commands.Cog):
                     i = json.loads(i)
                 except Exception:
                     await ctx.send('`Successfully linked your account.`')
-                    with open(os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))).replace('Cogs', ''), 'Config', 'assets', 'linked.txt'), 'a') as file:
+                    with open(os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))).replace('\\Cogs', ''), 'Config', 'assets', 'linked.txt'), 'a') as file:
                         file.write(str({"ctxid": ctxid, "uuid": uuid}) + "\n")
                         return
                 if i['ctxid'] == ctxid:
@@ -46,7 +45,7 @@ class link(commands.Cog):
                     await ctx.send(f'`Account {name} already linked. linked id: {i["ctxid"]}`')
                     return
             await ctx.send('`Successfully linked your account.`')
-            with open(os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))).replace('Cogs', ''), 'Config', 'assets', 'linked.txt'), 'a') as file:
+            with open(os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))).replace('\\Cogs', ''), 'Config', 'assets', 'linked.txt'), 'a') as file:
                 file.write(str({"ctxid": ctxid, "uuid": uuid}) + "\n")
         else:
             if dis:
@@ -58,7 +57,7 @@ class link(commands.Cog):
 
     @commands.command(aliases = ['unlink', ])
     async def unlink_account(self, ctx: commands.Context):
-        with open(os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))).replace('Cogs', ''), 'Config', 'assets', 'linked.txt'), 'r') as file:
+        with open(os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))).replace('\\Cogs', ''), 'Config', 'assets', 'linked.txt'), 'r') as file:
             all = file.readlines()
         count = 0
         for i in all:
@@ -69,7 +68,7 @@ class link(commands.Cog):
                 await ctx.send('`Successfully unlinked your account.`')
                 break
             count += 1
-        with open(os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))).replace('Cogs', ''), 'Config', 'assets', 'linked.txt'), 'w') as file:
+        with open(os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))).replace('\\Cogs', ''), 'Config', 'assets', 'linked.txt'), 'w') as file:
             for j in all:
                 file.write(j)
 async def setup(bot: commands.Bot):

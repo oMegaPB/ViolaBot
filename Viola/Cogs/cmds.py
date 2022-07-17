@@ -1,5 +1,6 @@
-import discord, requests, json, datetime, os, asyncio, random, traceback, time, sys
+import discord, requests, json, datetime, os, asyncio, random, traceback, time, sys, emoji
 from discord.ext import commands
+from discord.utils import get
 from discord.ext.commands import has_permissions
 from Config.assets.database import DataBase
 _ids = []
@@ -45,11 +46,93 @@ class cmds(commands.Cog):
                 return
             return
 
+    @commands.command(aliases = ['reaction-roles', ])
+    async def reactions(self, ctx: commands.Context, *args):
+        if not args:
+            await ctx.send(embed=discord.Embed(title='Ошибка.', description='`s!reaction-roles <add/remove> <channel_id | message_id | reaction | role_id>`\n**Пример:**\n `s!reaction-roles add 953386194262167574 998308825780191332 😋 924341639823114300`', color=0x00ffff))
+            return
+        if args[0] == 'add':
+            channel = self.bot.get_channel(int(str(args[1]).replace('<#', '').replace('>', '')))
+            try:
+                message = await channel.fetch_message(int(args[2]))
+            except discord.errors.NotFound:
+                message = None
+            done = False
+            if emoji.emoji_count(ctx.message.content) == 0:
+                reaction = None
+                for i in self.bot.emojis:
+                    if str(i) == str(args[3]):
+                        reaction = i
+                        break
+            else:
+                reaction = args[3]
+            role = get(ctx.guild.roles, id=int(str(args[4]).replace('<@&', '').replace('>', '')))
+            if message is not None and channel is not None and role is not None:
+                txt = DataBase('reactroles')
+                if done:
+                    res = txt.add({'channel_id': channel.id, 'message_id': message.id, 'reaction': reaction.name, 'role_id': role.id})
+                else:
+                    res = txt.add({'channel_id': channel.id, 'message_id': message.id, 'reaction': reaction, 'role_id': role.id})
+                if str(res['cleared']) == '1':
+                    await ctx.send('`Такой параметр уже существует.`')
+                    return
+                if done:
+                    if not reaction.animated:
+                        react = f'<:{reaction.name}:{reaction.id}>'
+                    else:
+                        react = f'<a:{reaction.name}:{reaction.id}>'
+                else:
+                    react = f'{reaction}'
+                await ctx.send(embed=discord.Embed(title='Роли за реакцию.', description=f'Параметр добавлен.\nКанал: <#{channel.id}>\nid сообщения: [**{message.id}**]({message.jump_url})\nРеакция: {react}\nРоль: <@&{role.id}>', color=discord.Color.green()))
+            else:
+                if message is None:
+                    await ctx.send('`Неправильный id сообщения.`')
+                elif channel is None:
+                    await ctx.send('`Неправильный id Канала.`')
+                elif role is None:
+                    await ctx.send('`Неправильный id Роли.`')
+
+
     @commands.command()
     async def ping(self, ctx: commands.Context):
         ping1 = f"{str(round(self.bot.latency * 1000))} ms"
         embed = discord.Embed(title = "**Pong!**", description = "`" + ping1 + "`", color = 0xafdafc)
         await ctx.send(embed = embed)
+
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def setprefix(self, ctx: commands.Context, prefix):
+        def getprefix():
+            txt = DataBase('prefixes')
+            res = txt.fetch('guildid', ctx.guild.id)
+            if res['success'] == 'True':
+                msg = res['value'].replace("'", '"').replace('\n', '')
+                msg = json.loads(msg)
+                return msg['prefix'] == prefix
+            else:
+                return 's!' == prefix
+        async def e1(ctx: commands.Context, mess: discord.Message):
+            await mess.edit(embed=discord.Embed(title='Смена префикса.', description=f'Префикс сервера {ctx.guild.name} теперь: `{prefix}`', color=0x00ffff))
+        async def c2(ctx: commands.Context, mess: discord.Message):
+            await mess.clear_reactions()
+        if getprefix():
+            await ctx.send(embed=discord.Embed(title='Ошибка.', description=f'Префикс сервера {ctx.guild.name} уже `{prefix}`. Нет смысла его менять.', color=0x00ffff))
+            return
+        def check(reaction, user):
+            return user == ctx.message.author and reaction.emoji == '✅'
+        try:
+            mess = await ctx.send(embed=discord.Embed(title='Смена префикса.', description=f'Сменить префикс сервера {ctx.guild.name} на `{prefix}`?', color=0x00ffff))
+            await mess.add_reaction('✅')
+            await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
+            self.bot.loop.create_task(c2(ctx, mess))
+            self.bot.loop.create_task(e1(ctx, mess))
+            txt = DataBase('prefixes')
+            txt.add({'guildid': ctx.guild.id, 'prefix': f'{prefix}'}, 'guildid')
+        except asyncio.TimeoutError:
+            try:
+                await mess.delete()
+            except discord.errors.NotFound:
+                return
 
     @commands.command(aliases = ['vc-members', ])
     @has_permissions(administrator=True)
@@ -173,14 +256,18 @@ class cmds(commands.Cog):
         except Exception:
             return
 
+    async def d1(self, ctx: commands.Context):
+        await ctx.message.delete()
+    async def r2(self, ctx: commands.Context, content, message: discord.Message):
+        await message.reply(content=' '.join(content))
     @commands.command(aliases = ['r', ])
     async def reply(self, ctx: commands.Context, *content):
-        await ctx.message.delete()
         if not ctx.message.reference:
             return
         ref = ctx.message.reference
         message = self.bot.get_channel(ref.channel_id).get_partial_message(ref.message_id)
-        await message.reply(content=' '.join(content))
+        self.bot.loop.create_task(self.d1(ctx))
+        self.bot.loop.create_task(self.r2(ctx, content, message))
 
     @commands.command()
     @has_permissions(administrator=True)

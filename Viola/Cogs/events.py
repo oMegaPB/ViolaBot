@@ -1,4 +1,4 @@
-import discord, requests, json, datetime, os, asyncio
+import discord, requests, json, datetime, os, asyncio, traceback
 from discord.ext import commands, tasks
 from discord.ext.commands.errors import CommandNotFound
 from discord.ext.commands import has_permissions, MissingPermissions, MissingRequiredArgument
@@ -50,8 +50,25 @@ class events(commands.Cog):
     
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.raw_models.RawReactionActionEvent):
-        # print(f'{payload.member} Из {self.bot.get_guild(payload.guild_id).name} Поставил реакцию {payload.emoji.name} в канале {self.bot.get_channel(payload.channel_id).name}')
-        pass
+        txt = DataBase('reactroles')
+        res = txt.fetchl('message_id', payload.message_id)
+        try:
+            for i in res['value']:
+                args = json.loads(i.replace("'", '"').replace('\n', ''))
+                if args['reaction'] == payload.emoji.name and args['channel_id'] == payload.channel_id:
+                    role = discord.utils.get(self.bot.get_guild(payload.guild_id).roles, id=int(args['role_id']))
+                    try:
+                        await payload.member.add_roles(role, reason='Роли за реакцию.')
+                    except discord.errors.Forbidden:
+                        channel = self.bot.get_channel(int(args['channel_id']))
+                        try:
+                            await channel.send(embed=discord.Embed(description=f'Боту не хватает прав выдать роль <@&{args["role_id"]}>!!!', color=0x00ffff))
+                        except Exception:
+                            pass
+                await asyncio.sleep(1)
+        except Exception:
+            return
+
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.member.VoiceState, after: discord.member.VoiceState):
         if before.channel is None and after.channel is not None:
@@ -66,11 +83,11 @@ class events(commands.Cog):
     @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error):
         if isinstance(error, CommandNotFound):
-            await ctx.send("`Неизвестная команда. Используйте s!help Для списка команд.`", delete_after = 25.0)
+            await ctx.send("`Неизвестная команда. Используйте s!help Для списка команд.`")
         elif isinstance(error, MissingPermissions):
-            await ctx.send('`Вам не хватает прав.`', delete_after = 25.0)
+            await ctx.send(f'`Вам не хватает прав.`(`{error.missing_permissions[0]}`)')
         elif isinstance(error, MissingRequiredArgument):
-            await ctx.send('`Не хватает аргументов.`', delete_after = 25.0)
+            await ctx.send(f'`Не хватает аргументов. Укажите аргумент:` **{error.param}**')
         else:
             raise error
 

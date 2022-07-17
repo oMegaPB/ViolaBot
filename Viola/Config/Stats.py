@@ -6,8 +6,8 @@ import threading, time
 from io import BytesIO
 from PIL import Image, ImageFont, ImageDraw
 from transliterate import translit
-
 class Stats:
+    path = str(os.path.dirname(os.path.realpath(__file__))).replace('/Config', '')
     def __init__(self, username):
         self._response, self._friends, self._guild, self.kd, self.tss = None, None, None, [['-', '-', '-', '-', '-', '-'], ['-', '-', '-', '-', '-', '-'], ['-', '-', '-', '-', '-', '-'], ['-', '-', '-', '-', '-', '-'], ['-', '-', '-', '-', '-', '-'], ['-', '-', '-', '-', '-', '-'], ['-', '-', '-', '-', '-', '-']], []
         try:
