@@ -1,1 +1,1 @@
-web: python Viola.py
+worker: python Viola.py
