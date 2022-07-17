@@ -32,7 +32,10 @@ class events(commands.Cog):
         for i in txt._getobjectsjson():
             channel = self.bot.get_channel(int(i['voiceid']))
             guild = self.bot.get_guild(int(i['guildid']))
-            await channel.edit(name=f"Участников: {guild.member_count}")
+            try:
+                await channel.edit(name=f"Участников: {guild.member_count}")
+            except Exception:
+                pass
             await asyncio.sleep(3)
 
     @commands.Cog.listener()
@@ -50,10 +53,13 @@ class events(commands.Cog):
         # print(f'{payload.member} Из {self.bot.get_guild(payload.guild_id).name} Поставил реакцию {payload.emoji.name} в канале {self.bot.get_channel(payload.channel_id).name}')
         pass
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member, before, after):
-        print(before)
-        print(after)
-        pass
+    async def on_voice_state_update(self, member: discord.Member, before: discord.member.VoiceState, after: discord.member.VoiceState):
+        if before.channel is None and after.channel is not None:
+            print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} зашел в канал {after.channel.name} | {after.channel.guild.name}')
+        elif before.channel is not None and after.channel is None:
+            print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} покинул канал {before.channel.name} | {before.channel.guild.name}')
+        elif before.channel is not None and after.channel is not None:
+            print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} перешёл в канал {after.channel.name} из {before.channel.name} | {before.channel.guild.name}')
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error):
