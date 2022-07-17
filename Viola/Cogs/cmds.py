@@ -1,4 +1,4 @@
-import discord, requests, json, datetime, os, asyncio, random, traceback, time
+import discord, requests, json, datetime, os, asyncio, random, traceback, time, sys
 from discord.ext import commands
 from discord.ext.commands import has_permissions
 from Config.assets.database import DataBase
@@ -283,7 +283,7 @@ class cmds(commands.Cog):
             embed = discord.Embed(title="Tickets", description="`<args: create/remove/perms>`", color=0x00ffff)
             await ctx.send(embed=embed)
 # -----------------------------------------------------------------------------------------------------------
-class Buttons_inChannel(discord.ui.View, cmds):
+class Buttons_inChannel(discord.ui.View):
     ids = []
     def __init__(self, *, timeout=None):
         super().__init__(timeout=timeout)
@@ -306,7 +306,7 @@ class Buttons_inChannel(discord.ui.View, cmds):
             return
         self.ids.remove(interaction.channel.id)
         _ids.remove(interaction.channel.id)
-class Buttons(discord.ui.View, cmds):
+class Buttons(discord.ui.View):
     def __init__(self, *, timeout=None):
         super().__init__(timeout=timeout)
     @discord.ui.button(label="Жалоба", style=discord.ButtonStyle.red)
@@ -316,14 +316,13 @@ class Buttons(discord.ui.View, cmds):
         value = res.replace("'", '"').replace('\n', '')
         value = json.loads(value)
         category = discord.utils.get(interaction.guild.categories, id=value['catid'])
+        await interaction.response.defer(ephemeral=True, thinking=True)
         for i in category.text_channels:
-            a = await botik.get_channel(i.id).pins()
+            channel = botik.get_channel(i.id)
+            a = await channel.pins()
             for j, k in enumerate(a):
                 if int(str(a[j].content).replace('>>> Ваш id: ', '')) == int(interaction.user.id):
-                    try:
-                        await interaction.response.send_message(content=f'Перейдите в канал <#{i.id}>.', ephemeral=True)
-                    except Exception:
-                        pass
+                    await interaction.followup.send(content=f'Перейдите в канал <#{i.id}>.', ephemeral=True)
                     return
         channel = await interaction.guild.create_text_channel(f"Жалоба {interaction.user.name}", category=category)
         await channel.set_permissions(interaction.guild.default_role, view_channel=False)
@@ -337,7 +336,7 @@ class Buttons(discord.ui.View, cmds):
                         await channel.set_permissions(role, view_channel=True, send_messages=True)
         except Exception:
             pass
-        await interaction.response.send_message(content=f'Канал <#{channel.id}> создан.', ephemeral=True)
+        await interaction.followup.send(content=f'Канал <#{channel.id}> создан.', ephemeral=True)
         await channel.send(f'>>> <@!{interaction.user.id}>')
         message = await channel.send(f'>>> Ваш id: {interaction.user.id}')
         await message.pin()
@@ -352,14 +351,12 @@ class Buttons(discord.ui.View, cmds):
         value = res.replace("'", '"').replace('\n', '')
         value = json.loads(value)
         category = discord.utils.get(interaction.guild.categories, id=value['catid'])
+        await interaction.response.defer(ephemeral=True, thinking=True)
         for i in category.text_channels:
             a = await botik.get_channel(i.id).pins()
             for j, k in enumerate(a):
                 if int(str(a[j].content).replace('>>> Ваш id: ', '')) == int(interaction.user.id):
-                    try:
-                        await interaction.response.send_message(content=f'Перейдите в канал <#{i.id}>.', ephemeral=True)
-                    except Exception:
-                        pass
+                    await interaction.followup.send(content=f'Перейдите в канал <#{i.id}>.', ephemeral=True)
                     return           
         channel = await interaction.guild.create_text_channel(f"Тикет {interaction.user.name}", category=category)
         await channel.set_permissions(interaction.guild.default_role, view_channel=False)
@@ -373,7 +370,7 @@ class Buttons(discord.ui.View, cmds):
                         await channel.set_permissions(role, view_channel=True, send_messages=True)
         except Exception:
             pass
-        await interaction.response.send_message(content=f'Канал <#{channel.id}> создан.', ephemeral=True)
+        await interaction.followup.send(content=f'Канал <#{channel.id}> создан.', ephemeral=True)
         await channel.send(f'>>> <@!{interaction.user.id}>')
         message = await channel.send(f'>>> Ваш id: {interaction.user.id}')
         await message.pin()
