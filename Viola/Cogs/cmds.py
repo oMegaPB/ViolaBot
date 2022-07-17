@@ -116,10 +116,17 @@ class cmds(commands.Cog):
         embed.color = discord.Color.random()
         await ctx.send(embed=embed)
 
+    async def d1(self, ctx: commands.Context):
+        await ctx.message.delete()
+    async def s2(self, ctx: commands.Context, content):
+        await ctx.send(' '.join(content))
     @commands.command()
     async def say(self, ctx: commands.Context, *content):
-        await ctx.message.delete()
-        await ctx.send(' '.join(content))
+        if not content:
+            await ctx.message.delete()
+            return
+        self.bot.loop.create_task(self.d1(ctx))
+        self.bot.loop.create_task(self.s2(ctx, content))
 
     @commands.command()
     async def leave(self, ctx: commands.Context, *guildid):
