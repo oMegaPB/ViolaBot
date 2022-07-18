@@ -51,13 +51,14 @@ class Stats:
                 pass
         try:
             # ['Bedwars', 'Arcade', 'Arena', 'GingerBread', 'Paintball', 'Quake', 'VampireZ', 'Walls', 'UHC', 'HungerGames', 'TNTGames', 'Walls3', 'Battleground', 'SkyWars', 'MCGO', 'SuperSmash', 'TrueCombat', 'SpeedUHC', 'SkyBlock', 'Duels', 'Pit', 'MurderMystery', 'BuildBattle', 'Legacy', 'Housing', 'WoolGames']
-            bwkills = int(self._response['player']['stats']['Bedwars']['kills_bedwars']) + int(self._response['player']['stats']['Bedwars']['final_kills_bedwars'])
+            bwkills = int(self._response['player']['stats']['Bedwars']['kills_bedwars'])
+            bwfinalkills = int(self._response['player']['stats']['Bedwars']['final_kills_bedwars'])
             bwdeaths = self._response['player']['stats']['Bedwars']['deaths_bedwars']
             bwwins = self._response['player']['stats']['Bedwars']['wins_bedwars']
             bwlosses = self._response['player']['stats']['Bedwars']['losses_bedwars']
             self.kd[0][0] = round(int(bwkills)/int(bwdeaths), 2)
             self.kd[0][1] = round(int(bwwins)/int(bwlosses), 2)
-            self.kd[0][2] = bwkills
+            self.kd[0][2] = bwkills + bwfinalkills
             self.kd[0][3] = bwdeaths
             self.kd[0][4] = bwwins
             self.kd[0][5] = bwlosses
@@ -188,6 +189,7 @@ class Stats:
                     pass
             except Exception as e:
                 return 'Default'
+            return 'Default'
         rank = GetRank(self._response)
         # Level Information
         try:
