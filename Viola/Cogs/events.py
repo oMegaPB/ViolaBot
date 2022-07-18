@@ -70,6 +70,29 @@ class events(commands.Cog):
             return
 
     @commands.Cog.listener()
+    async def on_raw_reaction_remove(self, payload: discord.raw_models.RawReactionActionEvent):
+        txt = DataBase('reactroles')
+        res = txt.fetchl('message_id', payload.message_id)
+        try:
+            for i in res['value']:
+                args = json.loads(i.replace("'", '"').replace('\n', ''))
+                if args['reaction'] == payload.emoji.name and args['channel_id'] == payload.channel_id:
+                    role = discord.utils.get(self.bot.get_guild(payload.guild_id).roles, id=int(args['role_id']))
+                    try:
+                        guild = self.bot.get_guild(payload.guild_id)
+                        member = guild.get_member(payload.user_id)
+                        await member.remove_roles(role, reason='Роли за реакцию.')
+                    except discord.errors.Forbidden:
+                        channel = self.bot.get_channel(int(args['channel_id']))
+                        try:
+                            await channel.send(embed=discord.Embed(description=f'Боту не хватает прав забрать роль <@&{args["role_id"]}>!!!', color=0x00ffff))
+                        except Exception:
+                            pass
+                await asyncio.sleep(1)
+        except Exception:
+            pass
+
+    @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.member.VoiceState, after: discord.member.VoiceState):
         if before.channel is None and after.channel is not None:
             print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} зашел в канал {after.channel.name} | {after.channel.guild.name}')
