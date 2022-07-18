@@ -4,7 +4,6 @@ from discord.utils import get
 from discord.ext.commands import has_permissions
 from Config.assets.database import DataBase
 _ids = []
-ids_ = []
 botik = None
 # -----------------------------------------------------------------------------------------------------------
 class cmds(commands.Cog):
@@ -50,8 +49,6 @@ class cmds(commands.Cog):
     @commands.command(aliases = ['reaction-roles', ])
     @has_permissions(administrator=True)
     async def reactions(self, ctx: commands.Context, *params):
-        if ctx.channel.id in ids_:
-            return
         try:
             if not params:
                 args = []
@@ -62,15 +59,12 @@ class cmds(commands.Cog):
                     mess = await ctx.send('`Роли за реакцию. Начнем?`')
                     await mess.add_reaction('✅')
                     await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
-                    ids_.append(ctx.channel.id)
                     args.append('add')
                 except asyncio.TimeoutError:
                     try:
                         await mess.delete()
                     except discord.errors.NotFound:
-                        ids_.remove(ctx.channel.id)
                         return
-                    ids_.remove(ctx.channel.id)
                     return
                 # -------------------------------------------------------------------------------
                 def check(m: discord.Message):
@@ -83,15 +77,12 @@ class cmds(commands.Cog):
                         args.append(channel.id)
                     else:
                         await ctx.send('`Канал не найден. Процесс прерван.`')
-                        ids_.remove(ctx.channel.id)
                         return
                 except asyncio.TimeoutError:
                     try:
                         await mess.delete()
-                        ids_.remove(ctx.channel.id)
                         return
                     except discord.errors.NotFound:
-                        ids_.remove(ctx.channel.id)
                         return
                 # -------------------------------------------------------------------------------
                 def check(m: discord.Message):
@@ -104,15 +95,12 @@ class cmds(commands.Cog):
                         args.append(message.id)
                     else:
                         await ctx.send('`Сообщение не найдено. Процесс прерван.`')
-                        ids_.remove(ctx.channel.id)
                         return
                 except asyncio.TimeoutError:
                     try:
                         await mess.delete()
-                        ids_.remove(ctx.channel.id)
                         return
                     except discord.errors.NotFound:
-                        ids_.remove(ctx.channel.id)
                         return
                 # -------------------------------------------------------------------------------
                 def check(m: discord.Message):
@@ -124,10 +112,8 @@ class cmds(commands.Cog):
                 except asyncio.TimeoutError:
                     try:
                         await mess.delete()
-                        ids_.remove(ctx.channel.id)
                         return
                     except discord.errors.NotFound:
-                        ids_.remove(ctx.channel.id)
                         return
                 # -------------------------------------------------------------------------------
                 def check(m: discord.Message):
@@ -140,15 +126,12 @@ class cmds(commands.Cog):
                         args.append(role.id)
                     else:
                         await ctx.send('`Роль не найдена. Процесс прерван.`')
-                        ids_.remove(ctx.channel.id)
                         return
                 except asyncio.TimeoutError:
                     try:
                         await mess.delete()
-                        ids_.remove(ctx.channel.id)
                         return
                     except discord.errors.NotFound:
-                        ids_.remove(ctx.channel.id)
                         return
                 # -------------------------------------------------------------------------------
                 if args[0] == 'add':
@@ -169,7 +152,6 @@ class cmds(commands.Cog):
                         reaction = args[3]
                     if reaction is None:
                         await msg1.reply('`Бот не знает такой реакции.`')
-                        ids_.remove(ctx.channel.id)
                         return
                     role = get(ctx.guild.roles, id=int(str(args[4]).replace('<@&', '').replace('>', '')))
                     if message is not None and channel is not None and role is not None:
@@ -182,7 +164,7 @@ class cmds(commands.Cog):
                             await message.add_reaction(reaction)
                         if str(res['cleared']) == '1':
                             await ctx.send('`Такой параметр уже существует.`')
-                            ids_.remove(ctx.channel.id)
+
                             return
                         if done:
                             if not reaction.animated:
@@ -201,7 +183,6 @@ class cmds(commands.Cog):
                         channel = self.bot.get_channel(int(json.loads(txt.fetch('message_id', int(params[1]))['value'].replace("'", '"').replace('\n', ''))['channel_id']))
                     except KeyError:
                         await ctx.send('`Сообщение не найдено в базе.`')
-                        ids_.remove(ctx.channel.id)
                         return
                     res = txt.fetch('message_id', int(params[1]))
                     if res['success'] == 'True':
@@ -218,9 +199,9 @@ class cmds(commands.Cog):
                             try:
                                 await mess.delete()
                             except discord.errors.NotFound:
-                                ids_.remove(ctx.channel.id)
+    
                                 return
-                            ids_.remove(ctx.channel.id)
+
                             return
                 elif params[0] == 'view':
                     txt = DataBase('reactroles')
@@ -241,7 +222,6 @@ class cmds(commands.Cog):
                         await ctx.send(embed=embed)
         except Exception as e:
             print(traceback.format_exc())
-            ids_.remove(ctx.channel.id)
             await ctx.send(f'`Что то пошло не так... {e}`')
 
     @commands.command()
