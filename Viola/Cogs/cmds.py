@@ -194,7 +194,7 @@ class cmds(commands.Cog):
                             await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
                             await mess.clear_reactions()
                             txt.remove('message_id', int(params[1]))
-                            await mess.edit('`Все параметры связанные с этим сообщением очищены.`')
+                            await mess.edit(content='`Все параметры связанные с этим сообщением очищены.`')
                         except asyncio.TimeoutError:
                             try:
                                 await mess.delete()
