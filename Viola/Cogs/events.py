@@ -165,18 +165,20 @@ class events(commands.Cog):
     @commands.Cog.listener()
     async def on_message_edit(self, before: discord.message.Message, after: discord.message.Message):
         txt = DataBase('msglogs')
-        res = txt.fetch('guildid', before.guild.id)
-        if res['success'] == 'True':
-            value = json.loads(res['value'].replace("'", '"').replace("\n", ''))
-            channel = self.bot.get_channel(int(value['channel_id']))
-            if before.content != after.content and before.author != after.author:
-                if not int(before.channel.id) == channel.id and int(value['guildid']) == before.guild.id:
-                    if before.content == '':
-                        before.content += '`attachment`'
-                    description = before.content + '  --->  ' + after.content
-                    embed = discord.Embed(description=description, color=discord.Color.gold())
-                    embed.set_footer(text=f'{after.guild.name}', icon_url=f'{after.guild.icon}')
-                    await channel.send(f'`[{datetime.datetime.now().strftime("%H:%M:%S")}]` **{before.author.name}**#{before.author.discriminator} Изменил свое сообщение в канале <#{before.channel.id}>', embed=embed)
-            
+        try:
+            res = txt.fetch('guildid', before.guild.id)
+            if res['success'] == 'True':
+                value = json.loads(res['value'].replace("'", '"').replace("\n", ''))
+                channel = self.bot.get_channel(int(value['channel_id']))
+                if before.content != after.content and before.author != after.author:
+                    if not int(before.channel.id) == channel.id and int(value['guildid']) == before.guild.id:
+                        if before.content == '':
+                            before.content += '`attachment`'
+                        description = before.content + '  --->  ' + after.content
+                        embed = discord.Embed(description=description, color=discord.Color.gold())
+                        embed.set_footer(text=f'{after.guild.name}', icon_url=f'{after.guild.icon}')
+                        await channel.send(f'`[{datetime.datetime.now().strftime("%H:%M:%S")}]` **{before.author.name}**#{before.author.discriminator} Изменил свое сообщение в канале <#{before.channel.id}>', embed=embed)
+        except Exception:
+            pass
 async def setup(bot: commands.Bot):
     await bot.add_cog(events(bot))
