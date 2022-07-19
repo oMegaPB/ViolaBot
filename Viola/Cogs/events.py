@@ -99,7 +99,7 @@ class events(commands.Cog):
             print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} зашел в канал {after.channel.name} | {after.channel.guild.name}')
         elif before.channel is not None and after.channel is None:
             print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} покинул канал {before.channel.name} | {before.channel.guild.name}')
-            txt = DataBase('msglogs')
+            txt = DataBase('voicelogs')
             res = txt.fetch('guildid', member.guild.id)
             if res['success'] == 'True':
                 value = json.loads(res['value'].replace("'", '"').replace("\n", ''))
