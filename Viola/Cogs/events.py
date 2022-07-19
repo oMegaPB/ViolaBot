@@ -94,10 +94,23 @@ class events(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.member.VoiceState, after: discord.member.VoiceState):
+        # <AuditLogEntry id=998929831263731784 action=AuditLogAction.member_disconnect user=<Member id=728165963480170567 name='MegaWatt_' discriminator='1114' bot=False nick=None guild=<Guild id=742394556405907457 name="Viola's house" shard_id=0 chunked=True member_count=13>>>
         if before.channel is None and after.channel is not None:
             print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} зашел в канал {after.channel.name} | {after.channel.guild.name}')
         elif before.channel is not None and after.channel is None:
             print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} покинул канал {before.channel.name} | {before.channel.guild.name}')
+            txt = DataBase('msglogs')
+            res = txt.fetch('guildid', member.guild.id)
+            if res['success'] == 'True':
+                value = json.loads(res['value'].replace("'", '"').replace("\n", ''))
+                channel = self.bot.get_channel(int(value['channel_id']))
+                async for entry in member.guild.audit_logs(limit=1, action=discord.AuditLogAction.member_disconnect):
+                    if entry.user.id != member.id:
+                        embed = discord.Embed(title='Отключение из голосового канала.', description=f'`{entry.user.name}#{entry.user.discriminator}` отключил `{member.name}#{member.discriminator}` из канала <#{before.channel.id}>')
+                        embed.color = 0x00ffff
+                        embed.set_footer(text=f'{member.guild.name}', icon_url=f'{member.guild.icon}')
+                        await channel.send(embed=embed)
+                return
         elif before.channel is not None and after.channel is not None:
             if before.channel.name == after.channel.name:
                 return
@@ -128,6 +141,42 @@ class events(commands.Cog):
                 async with message.channel.typing():
                     await asyncio.sleep(1)
                     await message.reply(f'Готовь попочку :pleading_face: :heart_eyes: ')
+
+    @commands.Cog.listener()
+    async def on_message_delete(self, message: discord.Message):
+        txt = DataBase('msglogs')
+        res = txt.fetch('guildid', message.guild.id)
+        if res['success'] == 'True':
+            value = json.loads(res['value'].replace("'", '"').replace("\n", ''))
+            channel = self.bot.get_channel(int(value['channel_id']))
+            # <AuditLogEntry id=995728596524085290 action=AuditLogAction.message_delete user=<Member id=728165963480170567 name='MegaWatt_' discriminator='1114' bot=False nick='Микроволновка' guild=<Guild id=506049013460631552 name='🌸 DG × 2022 ✨' shard_id=None chunked=True member_count=62>>>
+            async for entry in message.guild.audit_logs(limit=1, action=discord.AuditLogAction.message_delete):
+                if not int(message.channel.id) == channel.id and int(value['guildid']) == message.guild.id:
+                    if message.attachments:
+                        description = ''
+                        for i, j in enumerate(message.attachments):
+                            description += message.attachments[i].url
+                        embed = discord.Embed(description=description, color=discord.Color.red())
+                    else:
+                        description = message.content
+                        embed = discord.Embed(description=description, color=discord.Color.red())
+                    embed.set_footer(text=f'{message.guild.name}', icon_url=f'{message.guild.icon}')
+                    await channel.send(f':x: `[{datetime.datetime.now().strftime("%H:%M:%S")}]` **{entry.user.name}**#{entry.user.discriminator} Удалил сообщение от **{message.author.name}**#{message.author.discriminator} в канале <#{message.channel.id}>', embed=embed)
+    @commands.Cog.listener()
+    async def on_message_edit(self, before: discord.message.Message, after: discord.message.Message):
+        txt = DataBase('msglogs')
+        res = txt.fetch('guildid', before.guild.id)
+        if res['success'] == 'True':
+            value = json.loads(res['value'].replace("'", '"').replace("\n", ''))
+            channel = self.bot.get_channel(int(value['channel_id']))
+            if before.content != after.content and before.author != after.author:
+                if not int(before.channel.id) == channel.id and int(value['guildid']) == before.guild.id:
+                    if before.content == '':
+                        before.content += '`attachment`'
+                    description = before.content + '  --->  ' + after.content
+                    embed = discord.Embed(description=description, color=discord.Color.gold())
+                    embed.set_footer(text=f'{after.guild.name}', icon_url=f'{after.guild.icon}')
+                    await channel.send(f'`[{datetime.datetime.now().strftime("%H:%M:%S")}]` **{before.author.name}**#{before.author.discriminator} Изменил свое сообщение в канале <#{before.channel.id}>', embed=embed)
             
 async def setup(bot: commands.Bot):
     await bot.add_cog(events(bot))

