@@ -148,7 +148,7 @@ class cmds(commands.Cog):
     @commands.command()
     async def help(self, ctx: commands.Context):
         com1 = '**Hypixel**:\n`s!link, s!unlink`\n`s!gtop, s!s`\n\n'
-        com2 = '**Команды**:\n`s!reply, s!vcm`\n`s!say, s!ship`\n`s!vc-members <remove>\ns!tickets <create/remove/perms>`\n `s!reaction-roles <view (message_id / all)/remove (message_id)>`\n`s!setprefix, s!ping`'
+        com2 = '**Команды**:\n`s!reply, s!vcm`\n`s!say, s!ship`\n`s!vc-members <remove>\ns!tickets <create/remove/perms>`\n `/reactionroles (slash)`\n`s!setprefix, s!ping`'
         embed = discord.Embed(title="Help", description=com1+com2, color=discord.Color.green())
         await ctx.send(embed=embed)
 
