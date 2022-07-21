@@ -7,7 +7,7 @@ from transliterate import translit
 apikey = os.environ.get('APIKEY')
 # -------------------------------------------------------------------------------------------
 class stats(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
     
     @commands.command()

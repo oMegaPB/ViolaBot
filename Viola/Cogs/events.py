@@ -3,33 +3,38 @@ from discord.ext import commands, tasks
 from discord.ext.commands.errors import CommandNotFound
 from discord.ext.commands import has_permissions, MissingPermissions, MissingRequiredArgument
 from Cogs.cmds import Buttons, Buttons_inChannel
-from Cogs.cmds import bd
+from Config.core import Viola
 
 entrys_ = []
 
 class events(commands.Cog):
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot: Viola):
         self.bot = bot
 
     async def tickets_renew(self):
-            for i in bd.fetch({}, mode='all', category='tickets')['value']:
+            for i in self.bot.bd.fetch({}, mode='all', category='tickets')['value']:
                 id = int(i['channel_id'])
                 channel = self.bot.get_channel(id)
                 if channel is not None:
                     async for message in channel.history(limit=10, oldest_first=True):
                         if ">>> Если у вас есть жалоба или вопрос то этот канал для вас." in message.content:
-                            await message.edit(content=message.content, view=Buttons())
+                            try:
+                                await message.edit(content=message.content, view=Buttons(bot=self.bot))
+                            except discord.errors.Forbidden:
+                                pass
                 category = self.bot.get_channel(int(i['catid']))
                 if category is not None:
                     for k in category.text_channels:
                         channel = self.bot.get_channel(k.id)
                         async for message in channel.history(limit=10, oldest_first=True):
                             if message.content == '>>> Тикет был успешно создан.' or message.content =='>>> Жалоба была успешно создана.':
-                                await message.edit(content=message.content, view=Buttons_inChannel())
-
+                                try:
+                                    await message.edit(content=message.content, view=Buttons_inChannel(bot=self.bot))
+                                except discord.errors.Forbidden:
+                                    pass
     @tasks.loop(seconds=360)
     async def update_VoiceChannel_members(self):
-        for i in bd.fetch({}, mode='all', category='voicemembers')['value']:
+        for i in self.bot.bd.fetch({}, mode='all', category='voicemembers')['value']:
             channel = self.bot.get_channel(int(i['voiceid']))
             guild = self.bot.get_guild(int(i['guildid']))
             try:
@@ -40,6 +45,7 @@ class events(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
+        await self.bot.sync()
         self.update_VoiceChannel_members.start()
         await self.tickets_renew()
         print('-------------------------------------------')
@@ -49,7 +55,7 @@ class events(commands.Cog):
     
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.raw_models.RawReactionActionEvent):
-        res = bd.fetch({'message_id': payload.message_id}, mode='all', category='reactroles')
+        res = self.bot.bd.fetch({'message_id': payload.message_id}, mode='all', category='reactroles')
         try:
             for i in res['value']:
                 if i['reaction'] == payload.emoji.name and i['channel_id'] == payload.channel_id:
@@ -68,7 +74,7 @@ class events(commands.Cog):
 
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload: discord.raw_models.RawReactionActionEvent):
-        res = bd.fetch({'message_id': payload.message_id}, mode='all', category='reactroles')
+        res = self.bot.bd.fetch({'message_id': payload.message_id}, mode='all', category='reactroles')
         try:
             for i in res['value']:
                 if i['reaction'] == payload.emoji.name and i['channel_id'] == payload.channel_id:
@@ -95,7 +101,7 @@ class events(commands.Cog):
             print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} зашел в канал {after.channel.name} | {after.channel.guild.name}')
         elif before.channel is not None and after.channel is None:
             print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} покинул канал {before.channel.name} | {before.channel.guild.name}')
-            res = bd.fetch({'guildid': member.guild.id}, category='logs')
+            res = self.bot.bd.fetch({'guildid': member.guild.id}, category='logs')
             if res['success'] == 'True':
                 value = res['value']
                 channel = self.bot.get_channel(int(value['channel_id']))
@@ -112,6 +118,9 @@ class events(commands.Cog):
                     old = False
                     a = round(entry.created_at.timestamp())
                     b = round((datetime.datetime.utcnow() + datetime.timedelta(hours=3)).timestamp())
+                    print(a)
+                    print(b)
+                    print(b-a)
                     if b - a > 50:
                         old = True
                     if entry.user.id != member.id:
@@ -152,13 +161,13 @@ class events(commands.Cog):
                     await asyncio.sleep(1)
                     await message.reply(f'Готовь попочку :pleading_face: :heart_eyes: ')
             elif message.content == '<@924357517306380378>':
-                bd.fetch({})
+                self.bot.bd.fetch({})
 
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message):
         if message.author.bot:
             return
-        res = bd.fetch({'guildid': message.guild.id}, category='logs')
+        res = self.bot.bd.fetch({'guildid': message.guild.id}, category='logs')
         if res['success'] == 'True':
             value = res['value']
             channel = self.bot.get_channel(int(value['channel_id']))
@@ -194,7 +203,7 @@ class events(commands.Cog):
         if before.author.bot:
             return
         try:
-            res = bd.fetch({'guildid': before.guild.id}, category='logs')
+            res = self.bot.bd.fetch({'guildid': before.guild.id}, category='logs')
             if res['success'] == 'True':
                 value = res['value']
                 channel = self.bot.get_channel(int(value['channel_id']))

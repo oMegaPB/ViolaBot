@@ -114,7 +114,9 @@ class DataBase:
 # -----------------------------------------------------------------------------------------------------------
 class MongoDB:
     def __init__(self, category: Optional[str] = None, database: Optional[str] = None) -> None:
-        self.client = MongoClient(f"mongodb+srv://griefer228666:SDpWx8YgJ8a0sfRS@cluster0.atwbj6s.mongodb.net/?retryWrites=true&w=majority")
+        username = 'griefer228666'
+        password = 'SDpWx8YgJ8a0sfRS'
+        self.client = MongoClient(f"mongodb+srv://{username}:{password}@cluster0.atwbj6s.mongodb.net/?retryWrites=true&w=majority")
         self.db = self.client[database] if database else self.client['Viola']
         self.category = category if category else self.db['nocategory']
 
