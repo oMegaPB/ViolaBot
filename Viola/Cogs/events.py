@@ -121,7 +121,7 @@ class events(commands.Cog):
                     print(a)
                     print(b)
                     print(b-a)
-                    if b - a > 50:
+                    if b - a > 10850:
                         old = True
                     if entry.user.id != member.id:
                         if (not old) or again:
