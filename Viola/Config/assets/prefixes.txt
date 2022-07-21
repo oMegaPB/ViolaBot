@@ -1,3 +1,0 @@
-{'guildid': 617409712048177163, 'prefix': 'nigga'}
-{'guildid': 742394556405907457, 'prefix': 'nigga'}
-{'guildid': 506049013460631552, 'prefix': 's!'}
