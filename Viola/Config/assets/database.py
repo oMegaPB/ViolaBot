@@ -1,6 +1,7 @@
 import os, json
-from re import L
-
+from pymongo import MongoClient
+from typing import Optional
+# -----------------------------------------------------------------------------------------------------------
 class DataBase:
     def __init__(self, name: str):
         self._name = name
@@ -98,7 +99,7 @@ class DataBase:
         return {'success': 'False'}
     
     def remove(self, key, value):
-        # txt = DataBase('bdays')
+        # txt = DataBase('dbays')
         # txt.remove('author', 'Ded#8089')
         end_value = ''
         done = False
@@ -110,3 +111,68 @@ class DataBase:
         with open(self._path, 'w', encoding='utf-8') as file:
             file.write(end_value)
         return {'done': f'{done}'}
+# -----------------------------------------------------------------------------------------------------------
+class MongoDB:
+    def __init__(self, category: Optional[str] = None, database: Optional[str] = None) -> None:
+        self.client = MongoClient(f"mongodb+srv://griefer228666:SDpWx8YgJ8a0sfRS@cluster0.atwbj6s.mongodb.net/?retryWrites=true&w=majority")
+        self.db = self.client[database] if database else self.client['Viola']
+        self.category = category if category else self.db['nocategory']
+
+    @property
+    def categories(self):
+        return self.db.list_collection_names()
+    
+    def rows(self, category: str) -> str:
+        end = ''
+        for i in self.db[category].find({}):
+            end += str(i) + '\n'
+        return end
+
+    def clear(self, data: dict, category: str) -> None:
+        a = self.remove(data, category=category)
+        self.db[category].insert_one(data)
+        if a['done'] == 'True':
+            return 1
+        return 0
+
+    def add(self, data: dict, check: dict = None, category: str = 'nocategory') -> dict:
+        replaced = False
+        added = False
+        if check is None:
+            res = self.clear(data, category=category)
+            added = True
+            return {"replaced": str(replaced), "added": str(added), 'cleared': res}
+        args = self.fetch(check, category=category)
+        if args is not None:
+            self.db[category].find_one_and_replace(args, data)
+            replaced = True
+            res = self.clear(data, category=category)
+            return {"replaced": str(replaced), "added": str(added), 'cleared': res}
+        args = self.fetch(data, category=category)
+        if data != args:
+            self.db[category].insert_one(data)
+            added = True
+        res = self.clear(data, category=category)
+        return {"replaced": str(replaced), "added": str(added), 'cleared': res}
+        
+
+    def fetch(self, data: dict, mode: str = 'one', category: str = 'nocategory') -> dict:
+        if mode == 'one':
+            value = self.db[category].find_one(data)
+            if value:
+                return {'success': 'True', 'value': value}
+            return {'success': 'False'}
+        elif mode == 'all':
+            value = []
+            for x in self.db[category].find(data):
+                value.append(x)
+            if len(value) > 0:
+                return {'success': 'True', 'value': value}
+            return {'success': 'False'}
+    
+    def remove(self, data: dict, category: str) -> int:
+        count = self.db[category].delete_many(data).deleted_count
+        if count > 0:
+            return {'done': f'{True}'}
+        return {'done': f'{False}'}
+# -----------------------------------------------------------------------------------------------------------

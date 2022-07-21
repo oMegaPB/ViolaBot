@@ -2,7 +2,8 @@ import discord, requests, json, datetime, os, asyncio, random, traceback, time, 
 from discord.ext import commands
 from discord.utils import get
 from discord.ext.commands import has_permissions
-from Config.assets.database import DataBase
+from Config.assets.database import MongoDB
+bd = MongoDB()
 _ids = []
 botik = None
 # -----------------------------------------------------------------------------------------------------------
@@ -141,7 +142,7 @@ class cmds(commands.Cog):
                     except discord.errors.NotFound:
                         message = None
                     done = False
-                    if emoji.emoji_count([args[3]]) == 0:
+                    if emoji.emoji_count(str([args[3]])) == 0:
                         reaction = None
                         for i in self.bot.emojis:
                             if str(i) == str(args[3]):
@@ -155,16 +156,18 @@ class cmds(commands.Cog):
                         return
                     role = get(ctx.guild.roles, id=int(str(args[4]).replace('<@&', '').replace('>', '')))
                     if message is not None and channel is not None and role is not None:
-                        txt = DataBase('reactroles')
                         if done:
-                            res = txt.add({'channel_id': channel.id, 'message_id': message.id, 'reaction': reaction.name, 'role_id': role.id})
-                            await message.add_reaction(reaction)
+                            async with ctx.channel.typing():
+                                await message.add_reaction(reaction)
+                                await asyncio.sleep(1)
+                                res = bd.add({'guildid': ctx.guild.id, 'channel_id': channel.id, 'message_id': message.id, 'reaction': reaction.name, 'role_id': role.id}, category='reactroles')
                         else:
-                            res = txt.add({'channel_id': channel.id, 'message_id': message.id, 'reaction': reaction, 'role_id': role.id})
-                            await message.add_reaction(reaction)
+                            async with ctx.channel.typing():
+                                await message.add_reaction(reaction)
+                                await asyncio.sleep(1)
+                                res = bd.add({'guildid': ctx.guild.id, 'channel_id': channel.id, 'message_id': message.id, 'reaction': reaction, 'role_id': role.id}, category='reactroles')
                         if str(res['cleared']) == '1':
                             await ctx.send('`Такой параметр уже существует.`')
-
                             return
                         if done:
                             if not reaction.animated:
@@ -178,48 +181,72 @@ class cmds(commands.Cog):
                 if params[0] == 'help':
                     await ctx.send('`s!reaction-roles <remove/view> <message_id>`')
                 elif params[0] == 'remove':
-                    txt = DataBase('reactroles')
-                    try:
-                        channel = self.bot.get_channel(int(json.loads(txt.fetch('message_id', int(params[1]))['value'].replace("'", '"').replace('\n', ''))['channel_id']))
-                    except KeyError:
-                        await ctx.send('`Сообщение не найдено в базе.`')
-                        return
-                    res = txt.fetch('message_id', int(params[1]))
-                    if res['success'] == 'True':
-                        def check(reaction, user):
-                            return user == ctx.message.author and reaction.emoji == '💔'
+                    async with ctx.channel.typing():
                         try:
-                            mess = await ctx.send('`Удалить все параметры связанные с этим сообщением?`')
-                            await mess.add_reaction('💔')
-                            await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
-                            await mess.clear_reactions()
-                            txt.remove('message_id', int(params[1]))
-                            await mess.edit(content='`Все параметры связанные с этим сообщением очищены.`')
-                        except asyncio.TimeoutError:
-                            try:
-                                await mess.delete()
-                            except discord.errors.NotFound:
-    
-                                return
-
+                            messid = bd.fetch({'message_id': int(params[1])}, category='reactroles')['value']['message_id']
+                            channelid = bd.fetch({'message_id': int(params[1])}, category='reactroles')['value']['channel_id']
+                            message = await self.bot.get_channel(int(channelid)).fetch_message(int(messid))
+                        except KeyError:
+                            await ctx.send('`Сообщение не найдено в базе.`')
                             return
+                        if message is None:
+                            await ctx.send('`Сообщение не найдено. Оно удалено?`')
+                            return
+                        res = bd.fetch({'message_id': int(params[1])}, category='reactroles')
+                        if res['success'] == 'True':
+                            def check(reaction, user):
+                                return user == ctx.message.author and reaction.emoji == '💔'
+                            try:
+                                mess = await ctx.send('`Удалить все параметры связанные с этим сообщением?`')
+                                await mess.add_reaction('💔')
+                                await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
+                                await mess.clear_reactions()
+                                bd.remove({'message_id': int(params[1])}, category='reactroles')
+                                await mess.edit(content='`Все параметры связанные с этим сообщением очищены.`')
+                            except asyncio.TimeoutError:
+                                try:
+                                    await mess.delete()
+                                except discord.errors.NotFound:
+                                    return
+                                return
                 elif params[0] == 'view':
-                    txt = DataBase('reactroles')
-                    try:
-                        channel = self.bot.get_channel(int(json.loads(txt.fetch('message_id', int(params[1]))['value'].replace("'", '"').replace('\n', ''))['channel_id']))
-                    except KeyError:
-                        await ctx.send('`Сообщение не найдено в базе.`')
-                        return
-                    message = await channel.fetch_message(int(params[1]))
-                    res = txt.fetchl('message_id', int(params[1]))
-                    info = ''
-                    if res['success'] == 'True':
-                        for i in res['value']:
-                            i = json.loads(str(i).replace("'", '"').replace('\n', ''))
-                            info += f'Реакция: {i["reaction"]} ---> Роль: <@&{i["role_id"]}>\n'
-                        embed = discord.Embed(title="Роли за реакцию.", description=f"id сообщения: [{message.id}]({message.jump_url})\n{info}")
-                        embed.color = 0x00ffff
-                        await ctx.send(embed=embed)
+                    if params[1] == 'all':
+                        async with ctx.channel.typing():
+                            res = bd.fetch({'guildid': ctx.guild.id}, mode='all', category='reactroles')
+                            content = ''
+                            count = 0
+                            if res['success'] == 'True':
+                                for y in res['value']:
+                                    count += 1
+                                    channel = self.bot.get_channel(int(y['channel_id']))
+                                    message = await channel.fetch_message(int(y['message_id']))
+                                    content += f'**{count}.**\nКанал: <#{channel.id}>\nСообщение: [**[{message.id}]**]({message.jump_url})\nРеакция: {y["reaction"]}\nРоль: <@&{y["role_id"]}>\n'
+                                if content == '':
+                                    content = 'Параметров для этого сервера не найдено.'
+                                embed = discord.Embed(title='Все параметры связанные с этми сервером:', description=content)
+                                embed.color = 0x00ffff
+                                await ctx.send(embed=embed)
+                                return
+                            else:
+                                await ctx.send(embed=discord.Embed(title='Все параметры связанные с этми сервером:',description='Параметров для этого сервера не найдено.', color = 0x00ffff))
+                                return                    
+                    else:
+                        async with ctx.channel.typing():
+                            try:
+                                messid = bd.fetch({'message_id': int(params[1])})['value']['message_id']
+                                channelid = bd.fetch({'message_id': int(params[1])})['value']['channel_id']
+                                message = await self.bot.get_channel(int(channelid)).fetch_message(int(messid))
+                            except KeyError:
+                                await ctx.send('`Сообщение не найдено в базе.`')
+                                return
+                            res = bd.fetch({'message_id': int(params[1])}, mode='all', category='reactroles')
+                            info = ''
+                            if res['success'] == 'True':
+                                for i in res['value']:
+                                    info += f'Реакция: {i["reaction"]} ---> Роль: <@&{i["role_id"]}>\n'
+                                embed = discord.Embed(title="Роли за реакцию.", description=f"id сообщения: [{message.id}]({message.jump_url})\n{info}")
+                                embed.color = 0x00ffff
+                                await ctx.send(embed=embed)
         except Exception as e:
             print(traceback.format_exc())
             await ctx.send(f'`Что то пошло не так... {e}`')
@@ -234,22 +261,22 @@ class cmds(commands.Cog):
     @has_permissions(administrator=True)
     async def logs(self, ctx: commands.Context, *args):
         try:
-            if args[0] == 'messages':
-                if args[1] == 'add':
-                    channel = self.bot.get_channel(int(args[2]))
+            if args[0] == 'add':
+                res = bd.fetch({'guildid': ctx.guild.id}, category='logs')
+                if res['success'] == 'False':
+                    channel = self.bot.get_channel(int(args[1].replace('<#', '').replace('>', '')))
                     if channel is not None and channel.guild.id == ctx.guild.id and str(channel.type) == 'text':
-                        txt = DataBase('msglogs')
-                        mess = await ctx.send(f'`Добавить Логи удалённых и измененных сообщений?`')
+                        mess = await ctx.send(f'`Добавить систему логов?`')
                         await mess.add_reaction('❤️')
                         def check(reaction, user):
                             return user == ctx.message.author and reaction.emoji == '❤️'
                         try:
                             await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
-                            res = txt.add({'guildid': channel.guild.id, 'channel_id': channel.id})
+                            res = bd.add({'guildid': channel.guild.id, 'channel_id': channel.id}, category='logs')
                             if res['added'] == 'True':
-                                await mess.edit(content=f'`Логи сообщений добавлены. Канал:` <#{channel.id}>')
+                                await mess.edit(content=f'`Система логов добавлена. Канал:` <#{channel.id}>')
                             else:
-                                await mess.edit(content=f'`Новый канал для логов сообщений:` <#{channel.id}>')
+                                await mess.edit(content=f'`Новый канал для системы логов:` <#{channel.id}>')
                             await mess.clear_reactions()
                             return
                         except asyncio.TimeoutError:
@@ -261,78 +288,31 @@ class cmds(commands.Cog):
                     else:
                         await ctx.send('`Канал не найден среди текстовых каналов сервера.`')
                         return
-                elif args[1] == 'remove':
-                    txt = DataBase('msglogs')
-                    res = txt.fetch('guildid', ctx.guild.id)
-                    if res['success'] == 'True':
-                        mess = await ctx.send(f'`Удалить Логи удалённых и измененных сообщений?`')
-                        await mess.add_reaction('💔')
-                        def check(reaction, user):
-                            return user == ctx.message.author and reaction.emoji == '💔'
-                        try:
-                            await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
-                            txt.remove('guildid', ctx.guild.id)
-                            await mess.edit(content=f'`Логи сообщений удалены пользователем` <@!{ctx.author.id}>')
-                            await mess.clear_reactions()
-                            return
-                        except asyncio.TimeoutError:
-                            try:
-                                await mess.delete()
-                                return
-                            except discord.errors.NotFound:
-                                return
-                    else:
-                        await ctx.send('`Система логов сообщений не найдена.`')
-            elif args[0] == 'voice':
-                if args[1] == 'add':
-                    txt = DataBase('voicelogs')
-                    channel = self.bot.get_channel(int(args[2]))
-                    if channel is not None and channel.guild.id == ctx.guild.id and str(channel.type) == 'text':
-                        txt = DataBase('voicelogs')
-                        mess = await ctx.send(f'`Добавить Логи Отключения пользователей из голосовых каналов?`')
-                        await mess.add_reaction('❤️')
-                        def check(reaction, user):
-                            return user == ctx.message.author and reaction.emoji == '❤️'
-                        try:
-                            await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
-                            res = txt.add({'guildid': channel.guild.id, 'channel_id': channel.id})
-                            if res['added'] == 'True':
-                                await mess.edit(content=f'`Логи отключения пользователей из голосовых каналов добавлены. Канал:` <#{channel.id}>')
-                            else:
-                                await mess.edit(content=f'`Новый канал для логов этого типа:` <#{channel.id}>')
-                            await mess.clear_reactions()
-                            return
-                        except asyncio.TimeoutError:
-                            try:
-                                await mess.delete()
-                                return
-                            except discord.errors.NotFound:
-                                return
-                    else:
-                        await ctx.send('`Канал не найден среди текстовых каналов сервера.`')
+                else:
+                    channel = self.bot.get_channel(int(res['value']['channel_id']))
+                    await ctx.send(f'`Система логов уже активна. Канал:`<#{channel.id}>')
+                    return
+            elif args[0] == 'remove':
+                res = bd.fetch({'guildid': ctx.guild.id}, category='logs')
+                if res['success'] == 'True':
+                    mess = await ctx.send(f'`Удалить Систему логов?`')
+                    await mess.add_reaction('💔')
+                    def check(reaction, user):
+                        return user == ctx.message.author and reaction.emoji == '💔'
+                    try:
+                        await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
+                        bd.remove({'guildid': ctx.guild.id}, category='logs')
+                        await mess.edit(content=f'`Система логов удалена пользователем` <@!{ctx.author.id}>')
+                        await mess.clear_reactions()
                         return
-                elif args[1] == 'remove':
-                    txt = DataBase('voicelogs')
-                    res = txt.fetch('guildid', ctx.guild.id)
-                    if res['success'] == 'True':
-                        mess = await ctx.send(f'`Удалить Логи отключений голосовых каналов?`')
-                        await mess.add_reaction('💔')
-                        def check(reaction, user):
-                            return user == ctx.message.author and reaction.emoji == '💔'
+                    except asyncio.TimeoutError:
                         try:
-                            await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
-                            txt.remove('guildid', ctx.guild.id)
-                            await mess.edit(content=f'`Логи отключений голосовых каналов удалены.` <@!{ctx.author.id}>')
-                            await mess.clear_reactions()
+                            await mess.delete()
                             return
-                        except asyncio.TimeoutError:
-                            try:
-                                await mess.delete()
-                                return
-                            except discord.errors.NotFound:
-                                return
-                    else:
-                        await ctx.send('`Система логов этого типа не найдена.`')
+                        except discord.errors.NotFound:
+                            return
+                else:
+                    await ctx.send('`Система логов не найдена.`')
         except Exception:
             print(traceback.format_exc())
             await ctx.send('`Что то пошло не так...`')
@@ -341,12 +321,9 @@ class cmds(commands.Cog):
     @has_permissions(administrator=True)
     async def setprefix(self, ctx: commands.Context, prefix):
         def getprefix():
-            txt = DataBase('prefixes')
-            res = txt.fetch('guildid', ctx.guild.id)
+            res = bd.fetch({'guildid': ctx.guild.id}, category='prefixes')
             if res['success'] == 'True':
-                msg = res['value'].replace("'", '"').replace('\n', '')
-                msg = json.loads(msg)
-                return msg['prefix'] == prefix
+                return res['value']['prefix'] == prefix
             else:
                 return 's!' == prefix
         async def e1(ctx: commands.Context, mess: discord.Message):
@@ -364,8 +341,7 @@ class cmds(commands.Cog):
             await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
             self.bot.loop.create_task(c2(ctx, mess))
             self.bot.loop.create_task(e1(ctx, mess))
-            txt = DataBase('prefixes')
-            txt.add({'guildid': ctx.guild.id, 'prefix': f'{prefix}'}, 'guildid')
+            bd.add({'guildid': ctx.guild.id, 'prefix': f'{prefix}'}, check={'guildid': ctx.guild.id}, category='prefixes')
         except asyncio.TimeoutError:
             try:
                 await mess.delete()
@@ -381,26 +357,24 @@ class cmds(commands.Cog):
             if not channel.guild.id == ctx.guild.id:
                 await ctx.send(f'`Канал не найден`')
                 return
-            txt = DataBase('voicemembers')
-            a = txt.remove('voiceid', id)
+            a = bd.remove({'voiceid': id}, category='voicemembers')
             guild = self.bot.get_guild(int(channel.guild.id))
             if a['done'] == 'True':
-                await ctx.send(f'`{channel.name} удален из {guild.name}`')
+                await ctx.send(f'<#{channel.id}> `Убран из каналов статистики на сервере` **{guild.name}**')
             else:
                 await ctx.send(f'`Канал не найден`')
             return
         id = int(str(args[0]).replace('<#', '').replace('>', ''))
         channel = self.bot.get_channel(id)
-        txt = DataBase('voicemembers')
         if channel:
-            info = txt.add({'guildid': channel.guild.id, 'voiceid': id, 'name': str(channel.guild.name).replace(',', '').replace("'",'')}, 'guildid')
+            info = bd.add({'guildid': channel.guild.id, 'voiceid': id, 'name': str(channel.guild.name).replace(',', '').replace("'",'')}, {'guildid': ctx.guild.id}, category='voicemembers')
             if info['added'] == 'True':
-                await ctx.send(f'`Канал успешно добавлен. Канал: {channel.name}`')
+                await ctx.send(f'`Канал успешно добавлен. Канал:` <#{channel.id}>')
                 guild = self.bot.get_guild(int(channel.guild.id))
                 await channel.edit(name=f"Участников: {guild.member_count}")
                 return
             elif info['replaced'] == 'True':
-                await ctx.send(f'`Канал успешно обновлен. Новый канал: {channel.name}`')
+                await ctx.send(f'`Канал успешно обновлен. Новый канал:` <#{channel.id}>')
                 guild = self.bot.get_guild(int(channel.guild.id))
                 await channel.edit(name=f"Участников: {guild.member_count}")
                 return
@@ -451,7 +425,7 @@ class cmds(commands.Cog):
         self.bot.loop.create_task(self.d1(ctx))
         self.bot.loop.create_task(self.s2(ctx, content))
 
-    @commands.command()
+    @commands.command(aliases = ['guilds', ])
     async def leave(self, ctx: commands.Context, *guildid):
         if ctx.author.id == self.bot.owner_id:
             if not guildid:
@@ -514,8 +488,7 @@ class cmds(commands.Cog):
     async def tickets(self, ctx: commands.Context, *args):
         if args:
             if args[0] == 'remove':
-                txt = DataBase('tickets')
-                res = txt.fetch('guildid', str(ctx.guild.id))
+                res = bd.fetch({'guildid': ctx.guild.id}, category='tickets')
                 if res['success'] == 'True':
                     def check(reaction, user):
                         return user == ctx.message.author and reaction.emoji == '💔'
@@ -531,11 +504,10 @@ class cmds(commands.Cog):
                         except discord.errors.NotFound:
                             return
                     async with ctx.channel.typing():
-                        value = res['value'].replace("'", '"').replace('\n', '')
-                        value = json.loads(value)
+                        value = res['value']
                         category = discord.utils.get(ctx.guild.categories, id = int(value['catid']))
                         channel = self.bot.get_channel(int(value['channel_id']))
-                        res = txt.remove('guildid', int(ctx.guild.id))
+                        res = bd.remove({'guildid': int(ctx.guild.id)}, category='tickets')
                         try:
                             await channel.delete()
                         except Exception:
@@ -555,11 +527,9 @@ class cmds(commands.Cog):
                     await ctx.send(embed=embed)
             elif args[0] == 'create':
                 done = False
-                txt = DataBase('tickets')
-                res = txt.fetch('guildid', str(ctx.guild.id))
+                res = bd.fetch({'guildid': ctx.guild.id}, category='tickets')
                 if res['success'] == 'True':
-                    value = res['value'].replace("'", '"').replace('\n', '')
-                    value = json.loads(value)
+                    value = res['value']
                     category = discord.utils.get(ctx.guild.categories, id = int(value['catid']))
                     channel = self.bot.get_channel(int(value['channel_id']))
                     if channel is not None and category is not None:
@@ -588,18 +558,17 @@ class cmds(commands.Cog):
                     async with ctx.channel.typing():
                         category = await ctx.guild.create_category(name='-    Tickets    -', reason='tickets')
                         channel = await category.create_text_channel(name='Create Ticket', reason='tickets')
-                        res = txt.add({'guildid': ctx.guild.id, 'catid': category.id, 'channel_id': channel.id, 'name': ctx.guild.name.replace("'", '')}, 'guildid')
+                        res = bd.add({'guildid': ctx.guild.id, 'catid': category.id, 'channel_id': channel.id, 'name': ctx.guild.name.replace("'", '')}, check={'guildid': ctx.guild.id}, category='tickets')
                         await channel.send(">>> Если у вас есть жалоба или вопрос то этот канал для вас.\n**Убедительная просьба, не создавать тикеты просто так.**", view=Buttons())
                         await ctx.channel.send(f'`Система тикетов создана. Канал:`<#{channel.id}>')
             elif args[0] == 'perms':
                 lst = []
                 args = list(args)
                 args.remove('perms')
-                txt = DataBase('ticketsperms')
                 for i in args:
                     arg = str(i).replace('<@&', '').replace('>', '')
                     lst.append(int(arg))
-                res = txt.add({'guildid': ctx.guild.id, 'roles':lst}, 'guildid')
+                res = bd.add({'guildid': ctx.guild.id, 'roles':lst}, check={'guildid': ctx.guild.id}, category='ticketsperms')
                 text = '**Роли Обновлены:**\n'
                 for i in lst:
                     text+=f'<@&{i}>\n'
@@ -658,10 +627,8 @@ class Buttons(discord.ui.View):
         super().__init__(timeout=timeout)
     @discord.ui.button(label="Жалоба", style=discord.ButtonStyle.red)
     async def jaloba(self, interaction:discord.Interaction, button: discord.ui.Button):
-        txt = DataBase('tickets')
-        res = txt.fetch('guildid', str(interaction.guild.id))['value']
-        value = res.replace("'", '"').replace('\n', '')
-        value = json.loads(value)
+        res = bd.fetch({'guildid': interaction.guild.id}, category='tickets')['value']
+        value = res
         category = discord.utils.get(interaction.guild.categories, id=value['catid'])
         await interaction.response.defer(ephemeral=True, thinking=True)
         for i in category.text_channels:
@@ -675,8 +642,7 @@ class Buttons(discord.ui.View):
         await channel.set_permissions(interaction.guild.default_role, view_channel=False)
         await channel.set_permissions(target=interaction.user, view_channel=True)
         try:
-            db = DataBase('ticketsperms')
-            for i in db._getobjectsjson():
+            for i in bd.fetch({}, mode='all', category='ticketsperms')['value']:
                 if interaction.guild.id == int(i['guildid']):
                     for j in i['roles']:
                         role = interaction.guild.get_role(int(j))
@@ -693,10 +659,8 @@ class Buttons(discord.ui.View):
         message = await channel.send(f'>>> Жалоба была успешно создана.', view=Buttons_inChannel())
     @discord.ui.button(label="Тикет", style=discord.ButtonStyle.green)
     async def ticket(self, interaction:discord.Interaction, button: discord.ui.Button):
-        txt = DataBase('tickets')
-        res = txt.fetch('guildid', str(interaction.guild.id))['value']
-        value = res.replace("'", '"').replace('\n', '')
-        value = json.loads(value)
+        res = bd.fetch({'guildid': interaction.guild.id}, category='tickets')['value']
+        value = res
         category = discord.utils.get(interaction.guild.categories, id=value['catid'])
         await interaction.response.defer(ephemeral=True, thinking=True)
         for i in category.text_channels:
@@ -709,8 +673,7 @@ class Buttons(discord.ui.View):
         await channel.set_permissions(interaction.guild.default_role, view_channel=False)
         await channel.set_permissions(interaction.user, view_channel=True)
         try:
-            db = DataBase('ticketsperms')
-            for i in db._getobjectsjson():
+            for i in bd.fetch({}, mode='all', category='ticketsperms')['value']:
                 if interaction.guild.id == int(i['guildid']):
                     for j in i['roles']:
                         role = interaction.guild.get_role(int(j))

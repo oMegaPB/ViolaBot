@@ -6,22 +6,30 @@ from discord.ext.commands.errors import ExtensionNotLoaded
 from Config.assets.database import DataBase
 from discord.utils import get
 from aiohttp.client_exceptions import ClientConnectorError
+from Config.core import Viola
+from Cogs.cmds import bd
 
 intents = discord.Intents().all()
 
 def guild_based_prefix(bot, message: discord.Message):
-    txt = DataBase('prefixes')
-    res = txt.fetch('guildid', message.guild.id)
+    res = bd.fetch({'guildid': message.guild.id}, category='prefixes')
     if res['success'] == 'True':
-        msg = res['value'].replace("'", '"').replace('\n', '')
-        msg = json.loads(msg)
-        prefix = str(msg['prefix'])
+        prefix = str(res['value']['prefix'])
         return [prefix, prefix.capitalize(), prefix.upper(), prefix.lower(), 's!', 'S!']
     else:
         return ['s!', 'S!']
 
-bot = commands.Bot(case_insensitive=True, command_prefix=guild_based_prefix, intents=intents, owner_id=728165963480170567, strip_after_prefix=True)
-bot.remove_command("help")
+bot = Viola(
+    case_insensitive=True, 
+    command_prefix=guild_based_prefix, 
+    intents=intents, 
+    owner_id=728165963480170567, 
+    strip_after_prefix=True,
+    help_command=None, 
+    max_messages=5000,
+    allowed_mentions=discord.AllowedMentions(everyone=False, replied_user=True, roles=False, users=True),
+    activity=discord.Game(name="Visual Studio Code.")
+    )
 
 async def loadcogs():
     for filename in os.listdir(os.path.dirname(os.path.realpath(__file__)) + '/Cogs'):
@@ -46,7 +54,7 @@ async def cog(ctx: commands.Context, *extension):
                 await ctx.send("`Extension could not be found.`")
 
 try:
-    bot.run(os.environ.get('TOKEN'), log_level=0)
+    bot.run(os.environ.get("TOKEN"))
 except ClientConnectorError:
     print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [Viola/INFO]: Discord Bot Start Failed... (Connection issues).")
 except discord.errors.DiscordServerError:

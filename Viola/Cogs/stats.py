@@ -58,7 +58,7 @@ class stats(commands.Cog):
                 elif len(info[7]) == 2:
                     part3 = f"Last Login: Hiden In Api\nFirst Login: <t:{info[7][0]}:R>\nCached Time: <t:{info[7][1]}:R>\n"
                 else:
-                    part3 = f"Last Login: undifined\nFirst Login: undifined\nCached Time: <t:{info[7][0]}:R>\n"
+                    part3 = f"Last Login: undefined\nFirst Login: undefined\nCached Time: <t:{info[7][0]}:R>\n"
                 part4 = f'\n| Game | K/D | W/L |\n| Bedwars | {info[8][0][0]} | {info[8][0][1]} |\n| Skywars | {info[8][1][0]} | {info[8][1][1]} |\n| Duels | {info[8][2][0]} | {info[8][2][1]} |\n| MM | {info[8][6][0]} | {info[8][6][1]} |\n\n'
                 part5 = 'Names:\n'
                 count = 0
@@ -357,10 +357,10 @@ class stats(commands.Cog):
             Vip = '#66ff00'
             img_color = '#242424'
             img = Image.new('RGB', (1200, 1550), color=img_color)
-            font = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'shrift.ttf'), size=75)
-            font2 = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'shrift.ttf'), size=60)
-            font3 = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'shrift.ttf'), size=45)
-            mainfont = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'main.ttf'), size=35)
+            font = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('\Cogs', ''), 'Config', 'assets', 'shrift.ttf'), size=75)
+            font2 = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('\Cogs', ''), 'Config', 'assets', 'shrift.ttf'), size=60)
+            font3 = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('\Cogs', ''), 'Config', 'assets', 'shrift.ttf'), size=45)
+            mainfont = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('\Cogs', ''), 'Config', 'assets', 'main.ttf'), size=35)
             draw_text = ImageDraw.Draw(img)
             # =---------------------------------------------------------------------------------------------------------------------------
             colors = {'BLACK':'#000000', 'DARK_BLUE':'#1619ff', 'DARK_GREEN':'#026340', 'DARK_AQUA':'#0acdde', 'DARK_RED':'#ab1d0b', 'DARK_PURPLE':'#9400d3', 'GOLD':'#ffd700', 'GRAY':'#808080', 'DARK_GRAY':'#45433b', 'BLUE':'#1b98f7', 'GREEN':'#00e600', 'AQUA':'#008cf0', 'RED':'#ff0000', 'YELLOW':'#fffe06', 'WHITE':'#ffffff', 'LIGHT_PURPLE':'#9d81ba'}
@@ -555,8 +555,8 @@ class stats(commands.Cog):
                 firstlogin = str(datetime.datetime.fromtimestamp(int(self.info[7][1])))
                 lastlogin = 'Hiden In Api'
             else:
-                firstlogin = 'undifined'
-                lastlogin = 'undifined'
+                firstlogin = 'undefined'
+                lastlogin = 'undefined'
             draw_text.text((35, 675), f'First Login:\n{firstlogin}', font=mainfont, fill='#ffffff', anchor='la')
             draw_text.text((540, 675), f'Last Login:\n{lastlogin}', font=mainfont, fill='#ffffff', anchor='la')
             kdl = self.info[8] # bw, sw, duels, mw, uhc(kd, kills, deaths, wins) // K/D, W/L, kills, deaths, wins, losses

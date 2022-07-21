@@ -1,7 +1,8 @@
 import discord, requests, json, datetime, os
 from discord.ext import commands
 from discord.ext.commands.errors import CommandNotFound
-from Config.settings import apikey
+apikey = os.environ.get('APIKEY')
+
 def getDiscord(username):
     try:
         try:
