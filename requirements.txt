@@ -1,0 +1,9 @@
+git+https://github.com/Rapptz/discord.py@master
+transliterate==1.10.2
+pillow==9.2.0
+requests==2.28.1
+emoji==2.0.0
+pymongo==4.2.0
+dnspython==2.2.1
+youtube-transcript-api==0.4.4
+lavalink==3.1.7
