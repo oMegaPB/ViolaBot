@@ -1,4 +1,4 @@
-<a href="https://github.com/leyla-developers/Leyla">
+<a href="https://github.com/oMegaPB/ViolaBot">
     <img src="https://img.shields.io/tokei/lines/github/oMegaPB/ViolaBot?color=green&label=Lines%20of%20code&logo=github&logoColor=green" alt="lines">
 </a>
 
