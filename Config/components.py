@@ -11,8 +11,7 @@ import youtube_transcript_api
 
 # Reactions -----------------------------------------------------------------------------------------------------------
 class ReactionsCallback(discord.ui.Select):
-    def __init__(self, bot: Viola):
-        self.bot = bot
+    def __init__(self):
         options=[
             discord.SelectOption(label="Добавить параметр.",emoji="👌",description="Добавить параметр выдачи роли по реакции."),
             discord.SelectOption(label="Удалить параметр.",emoji="✨",description="Удалить параметр выдачи роли по реакции."),
@@ -38,9 +37,9 @@ class ReactionsCallback(discord.ui.Select):
                 # ------------------------------------------------------------------------------------------
                 await interaction.response.defer()
                 async with interaction.channel.typing():
-                    mess = await interaction.channel.send(embed=self.embed('Введите id канала:', interaction), view=CloseButton(bot=self.bot))
+                    mess = await interaction.channel.send(embed=self.embed('Введите id канала:', interaction), view=CloseButton())
                 try:
-                    msg = await self.bot.wait_for('message', timeout=60.0, check=check)
+                    msg: discord.Message = await interaction.client.wait_for('message', timeout=60.0, check=check)
                 except asyncio.TimeoutError:
                     return
                 try:
@@ -48,15 +47,15 @@ class ReactionsCallback(discord.ui.Select):
                 except discord.errors.NotFound:
                     return
                 await msg.delete()
-                channel = self.bot.get_channel(int(msg.content))
+                channel = interaction.client.get_channel(int(msg.content))
                 if channel is None or channel.guild.id != interaction.guild_id or (channel.type is not discord.ChannelType.text):
                     await mess.edit(embed=self.embed('Канал не найден среди текстовых каналов этого сервера.', interaction, format='Error'))
                     return
                 args.append(channel.id)
                 # ------------------------------------------------------------------------------------------
-                mess = await mess.edit(embed=self.embed(f'`Канал:` <#{channel.id}>\n\n**Введите id Сообщения:**', interaction), view=CloseButton(bot=self.bot))
+                mess = await mess.edit(embed=self.embed(f'`Канал:` <#{channel.id}>\n\n**Введите id Сообщения:**', interaction), view=CloseButton())
                 try:    
-                    msg = await self.bot.wait_for('message', timeout=60.0, check=check)
+                    msg = await interaction.client.wait_for('message', timeout=60.0, check=check)
                 except asyncio.TimeoutError:
                     return
                 try:
@@ -65,15 +64,15 @@ class ReactionsCallback(discord.ui.Select):
                     return
                 await msg.delete()
                 try:
-                    message = await self.bot.get_channel(int(args[0])).fetch_message(int(msg.content))
+                    message = await interaction.client.get_channel(int(args[0])).fetch_message(int(msg.content))
                 except discord.errors.NotFound:
                     await mess.edit(embed=self.embed('Сообщение не найдено.', interaction, format='Error'))
                     return
                 args.append(message.id)
                 # ------------------------------------------------------------------------------------------
-                mess = await mess.edit(embed=self.embed(f'`Канал:` <#{channel.id}>\n`Сообщение:` [[{message.id}]]({message.jump_url})\n\n**Упомяните роль или отправьте ее id:**', interaction), view=CloseButton(bot=self.bot))
+                mess = await mess.edit(embed=self.embed(f'`Канал:` <#{channel.id}>\n`Сообщение:` [[{message.id}]]({message.jump_url})\n\n**Упомяните роль или отправьте ее id:**', interaction), view=CloseButton())
                 try:    
-                    msg = await self.bot.wait_for('message', timeout=60.0, check=check)
+                    msg = await interaction.client.wait_for('message', timeout=60.0, check=check)
                 except asyncio.TimeoutError:
                     return
                 try:
@@ -96,9 +95,9 @@ class ReactionsCallback(discord.ui.Select):
                     return
                 # ------------------------------------------------------------------------------------------
                 added = False
-                mess = await mess.edit(embed=self.embed(f'`Канал:` <#{channel.id}>\n`Сообщение:` [[{message.id}]]({message.jump_url})\n`Роль:` <@&{role.id}>\n\n**Отправьте нужную вам реакцию в чат:**', interaction), view=CloseButton(bot=self.bot))
+                mess = await mess.edit(embed=self.embed(f'`Канал:` <#{channel.id}>\n`Сообщение:` [[{message.id}]]({message.jump_url})\n`Роль:` <@&{role.id}>\n\n**Отправьте нужную вам реакцию в чат:**', interaction), view=CloseButton())
                 try:    
-                    msg = await self.bot.wait_for('message', timeout=60.0, check=check)
+                    msg = await interaction.client.wait_for('message', timeout=60.0, check=check)
                 except asyncio.TimeoutError:
                     return
                 try:
@@ -122,7 +121,7 @@ class ReactionsCallback(discord.ui.Select):
                         else:
                             reaction = reaction[2:]
                         raw_reaction = msg.content
-                        for x in self.bot.emojis:
+                        for x in interaction.client.emojis:
                             if str(raw_reaction) == str(x):
                                 await message.add_reaction(x)
                                 added = True
@@ -133,14 +132,14 @@ class ReactionsCallback(discord.ui.Select):
                 await msg.delete()
                 args.append(reaction)
                 # ------------------------------------------------------------------------------------------
-                res = self.bot.bd.fetch({'guildid': interaction.guild.id, 'channel_id': args[0], 'message_id': args[1], 'reaction': args[3], 'role_id': args[2]}, category='reactroles')
+                res = interaction.client.bd.fetch({'guildid': interaction.guild.id, 'channel_id': args[0], 'message_id': args[1], 'reaction': args[3], 'role_id': args[2]}, category='reactroles')
                 while True:
                     id = random.randint(100000, 999999)
-                    res = await self.bot.bd.fetch({'uniqid': id}, category='reactroles')
+                    res = await interaction.client.bd.fetch({'uniqid': id}, category='reactroles')
                     if not res.status:
                         break
                 if not res.status:
-                    res = await self.bot.bd.add(
+                    res = await interaction.client.bd.add(
                         {'guildid': interaction.guild.id, 'channel_id': args[0], 'message_id': args[1], 'reaction': args[3], 'role_id': args[2], 'uniqid': id},
                         category='reactroles'
                     )
@@ -158,16 +157,16 @@ class ReactionsCallback(discord.ui.Select):
         elif self.values[0] == 'Просмотр параметров.':
             async with interaction.channel.typing():
                 await interaction.response.defer()
-                res = await self.bot.bd.fetch({'guildid': interaction.guild.id}, mode='all', category='reactroles')
+                res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, mode='all', category='reactroles')
                 content = ''
                 count = 0
                 if res.status:
                     for y in res.value:
-                        channel = self.bot.get_channel(int(y['channel_id']))
+                        channel = interaction.client.get_channel(int(y['channel_id']))
                         try:
                             message = await channel.fetch_message(int(y['message_id']))
                         except (discord.errors.NotFound, Exception):
-                            self.bot.bd.remove(y, category='reactroles')
+                            interaction.client.bd.remove(y, category='reactroles')
                             continue
                         count += 1
                         content += f'**{count}.**\n`Канал:` <#{channel.id}>\n`Сообщение:` [**[{message.id}]**]({message.jump_url})\n`Реакция:` {y["reaction"]}\n`Роль:` <@&{y["role_id"]}>\n`ID:` [{y["uniqid"]}]\n'
@@ -183,14 +182,14 @@ class ReactionsCallback(discord.ui.Select):
         elif self.values[0] == 'Удалить параметр.':
             async with interaction.channel.typing():
                 await interaction.response.defer()
-                res = await self.bot.bd.fetch({'guildid': interaction.guild.id}, mode='all', category='reactroles')
+                res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, mode='all', category='reactroles')
                 if not res.status:
                     await interaction.channel.send(embed=self.embed(f'Параметров для этого сервера не найдено.', interaction, format='Error'))
                     return
-                mess = await interaction.channel.send(embed=self.embed(f'Отправьте в чат id параметра:', interaction), view=CloseButton(bot=self.bot))
+                mess = await interaction.channel.send(embed=self.embed(f'Отправьте в чат id параметра:', interaction), view=CloseButton())
                 try:
                     try:
-                        msg = await self.bot.wait_for('message', timeout=60.0, check=check)
+                        msg = await interaction.client.wait_for('message', timeout=60.0, check=check)
                         try:
                             await interaction.channel.fetch_message(mess.id)
                         except discord.errors.NotFound:
@@ -202,9 +201,9 @@ class ReactionsCallback(discord.ui.Select):
                             return
                         except discord.errors.NotFound:
                             return
-                    res = await self.bot.bd.fetch({'uniqid': int(msg.content)}, category='reactroles')
+                    res = await interaction.client.bd.fetch({'uniqid': int(msg.content)}, category='reactroles')
                     if res.status:
-                        await self.bot.bd.remove(res.value, category='reactroles')
+                        await interaction.client.bd.remove(res.value, category='reactroles')
                         await mess.edit(embed=self.embed(f'Параметр успешно удален.', interaction), view=None)
                         return
                     else:
@@ -213,19 +212,18 @@ class ReactionsCallback(discord.ui.Select):
                 except Exception as e:
                     print(traceback.format_exc())
 class CloseButton(discord.ui.View):
-    def __init__(self, *, bot: Viola, timeout=None):
+    def __init__(self, *, timeout=None):
         super().__init__(timeout=timeout)
-        self.bot = bot
     @discord.ui.button(label="❌Выход", style=discord.ButtonStyle.red)
     async def close(self, interaction:discord.Interaction, button: discord.ui.Button):
         await interaction.message.delete()
 class Reactions(discord.ui.View):
-    def __init__(self, *, timeout=None, author: discord.Member, bot: Viola):
-        self.author = author
+    def __init__(self, *, timeout=None, ctx: commands.Context):
+        self.ctx = ctx
         super().__init__(timeout=timeout)
-        self.add_item(ReactionsCallback(bot))
+        self.add_item(ReactionsCallback())
     async def interaction_check(self, interaction: discord.Interaction):
-        if interaction.user.id != self.author.id:
+        if interaction.user.id != self.ctx.author.id:
             await interaction.response.send_message(embed=discord.Embed(title='Error', description='Вы не можете взаимодействовать с этим сообщением, т.к его вызвал другой человек.', color=discord.Color.red()), ephemeral=True)
             return False
         return True
@@ -497,6 +495,7 @@ class MusicActions(discord.ui.View):
                         self.edited = len(self.ended)
                         options = []
                         used = []
+                        y: lavalink.AudioTrack
                         for y in self.ended:
                             if not y.author in used:
                                 used.append(y.author)
@@ -520,11 +519,21 @@ class MusicActions(discord.ui.View):
                     b = round((datetime.datetime.utcnow() + datetime.timedelta(hours=3)).timestamp())
                     if b - a > 25 or x.extra.count > 0:
                         embed = discord.Embed(color=discord.Color.green())
-                        embed.description = '`Музыка больше не проигрывается так как меня отключили из голосового канала.`'
-                        try:
-                            embed.set_footer(text=f'{guild.name}', icon_url=f'{guild.icon.url}')
-                        except Exception:
-                            embed.set_footer(text=f'{guild.name}', icon_url=f'{self.bot.user.avatar.url}')
+                        a: discord.Member = self.player.fetch(key=int(self.player.guild_id))
+                        if a is not None:
+                            self.player.delete(key=guild.id)
+                            embed.description = f'`Я покинула голосовой канал.`'
+                            try:
+                                embed.set_footer(text=f'Действие запрошено {a}.', icon_url=f'{a.avatar.url}')
+                            except Exception:
+                                embed.set_footer(text=f'Действие запрошено {a}.')
+                            embed.color = discord.Color.blurple()
+                        else:
+                            embed.description = '`Музыка больше не проигрывается так как меня отключили из голосового канала.`'
+                            try:
+                                embed.set_footer(text=f'{guild.name}', icon_url=f'{guild.icon.url}')
+                            except Exception:
+                                embed.set_footer(text=f'{guild.name}', icon_url=f'{self.bot.user.avatar.url}')
                         mess = self.player.fetch('mess')
                         await guild.change_voice_state(channel=None)
                         self.player.channel_id = None
@@ -556,10 +565,10 @@ class MusicActions(discord.ui.View):
     async def close(self, interaction:discord.Interaction, button: discord.ui.Button):
         if not interaction.user.voice or (self.player.is_connected and interaction.user.voice.channel.id != int(self.player.channel_id)):
             return await interaction.response.send_message(f'Подключитесь к каналу <#{self.player.channel_id}> чтобы использовать плеер.', ephemeral=True)
+        self.player.store(key=interaction.guild.id, value=interaction.user)
         self.player.queue.clear()
         await self.player.stop()
         await self.ctx.voice_client.disconnect(force=True)
-        self.player.store(key=interaction.guild.id, value=interaction.user)
         await interaction.response.defer()
     @discord.ui.button(label="📖", style=discord.ButtonStyle.gray, disabled=False)
     async def lyrics(self, interaction:discord.Interaction, button: discord.ui.Button):
@@ -697,9 +706,8 @@ class MusicActions(discord.ui.View):
         await interaction.response.defer()
 # SetInfo -------------------------------------------------------------------------------------------------------------------
 class Bio(discord.ui.Modal, title='Расскажите всем кто вы такой!'):
-    def __init__(self, bot: Viola):
-        super().__init__()
-        self.bot = bot
+    def __init__(self, timeout=None):
+        super().__init__(timeout=timeout)
     answer = discord.ui.TextInput(label='Ответ', style=discord.TextStyle.paragraph, placeholder='Писать сюда.', required=True, max_length=250)
     async def on_submit(self, interaction: discord.Interaction):
         answer = self.answer.value
@@ -709,15 +717,14 @@ class Bio(discord.ui.Modal, title='Расскажите всем кто вы т�
         except json.JSONDecodeError:
             await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
             return
-        res = await self.bot.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='bio')
+        res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='bio')
         if res.status:
-            await self.bot.bd.remove(res.value, category='bio')
-        await self.bot.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': answer}, category='bio')
+            await interaction.client.bd.remove(res.value, category='bio')
+        await interaction.client.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': answer}, category='bio')
         await interaction.response.send_message(f'`Вы обновили свою биографию`:\n{answer}', ephemeral=True)
 class Age(discord.ui.Modal, title='Сколько Вам лет?'):
-    def __init__(self, bot: Viola):
-        super().__init__()
-        self.bot = bot
+    def __init__(self, timeout=None):
+        super().__init__(timeout=timeout)
     answer = discord.ui.TextInput(label='Ответ', style=discord.TextStyle.paragraph, placeholder='Писать сюда.', required=True, max_length=2)
     async def on_submit(self, interaction: discord.Interaction):
         answer = self.answer.value
@@ -727,15 +734,14 @@ class Age(discord.ui.Modal, title='Сколько Вам лет?'):
         except json.JSONDecodeError:
             await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
             return
-        res = await self.bot.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='age')
+        res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='age')
         if res.status:
-            await self.bot.bd.remove(res.value, category='age')
-        await self.bot.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': answer}, category='age')
+            await interaction.client.bd.remove(res.value, category='age')
+        await interaction.client.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': answer}, category='age')
         await interaction.response.send_message(f'`Вы обновили свой возраст!`:\n{answer}', ephemeral=True)
 class Gender(discord.ui.Modal, title='Мальчик/Девочка?'):
-    def __init__(self, bot: Viola):
-        super().__init__()
-        self.bot = bot
+    def __init__(self, timeout=None):
+        super().__init__(timeout=timeout)
     answer = discord.ui.TextInput(label='Ответ', style=discord.TextStyle.paragraph, placeholder='Писать сюда.', required=True, max_length=25)
     async def on_submit(self, interaction: discord.Interaction):
         answer = self.answer.value
@@ -745,15 +751,14 @@ class Gender(discord.ui.Modal, title='Мальчик/Девочка?'):
         except json.JSONDecodeError:
             await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
             return
-        res = await self.bot.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='gender')
+        res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='gender')
         if res.status:
-            await self.bot.bd.remove(res.value, category='gender')
-        await self.bot.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': answer}, category='gender')
+            await interaction.client.bd.remove(res.value, category='gender')
+        await interaction.client.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': answer}, category='gender')
         await interaction.response.send_message(f'`Вы обновили свой Пол!`:\n{answer}', ephemeral=True)
 class Name(discord.ui.Modal, title='Как вас зовут?'):
-    def __init__(self, bot: Viola):
-        super().__init__()
-        self.bot = bot
+    def __init__(self, timeout=None):
+        super().__init__(timeout=timeout)
     answer = discord.ui.TextInput(label='Ответ', style=discord.TextStyle.paragraph, placeholder='Писать сюда.', required=True, max_length=50)
     async def on_submit(self, interaction: discord.Interaction):
         answer = self.answer.value
@@ -763,16 +768,15 @@ class Name(discord.ui.Modal, title='Как вас зовут?'):
         except json.JSONDecodeError:
             await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
             return
-        res = await self.bot.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='name')
+        res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='name')
         if res.status:
-            await self.bot.bd.remove(res.value, category='name')
-        await self.bot.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': answer}, category='name')
+            await interaction.client.bd.remove(res.value, category='name')
+        await interaction.client.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': answer}, category='name')
         await interaction.response.send_message(f'`Вы обновили своё Имя!`:\n{answer}', ephemeral=True)
 class SetInfo(discord.ui.View):
     def __init__(self, *, timeout=180.0, bot: Viola, ctx: commands.Context):
         super().__init__(timeout=timeout)
         self.add_item(closeButton(label='❌Выход', style=discord.ButtonStyle.red))
-        self.bot=bot
         self.ctx=ctx
     @discord.ui.select(placeholder='Выберите опцию...', options=[
         discord.SelectOption(label="Заполнить биографию."),
@@ -782,13 +786,13 @@ class SetInfo(discord.ui.View):
         ])
     async def infoset(self, interaction: discord.Interaction, select: discord.ui.Select):
         if select.values[0] == 'Заполнить биографию.':
-            await interaction.response.send_modal(Bio(self.bot))
+            await interaction.response.send_modal(Bio())
         elif select.values[0] == 'Указать возраст.':
-            await interaction.response.send_modal(Age(self.bot))
+            await interaction.response.send_modal(Age())
         elif select.values[0] == 'Указать пол.':
-            await interaction.response.send_modal(Gender(self.bot))
+            await interaction.response.send_modal(Gender())
         elif select.values[0] == 'Указать имя.':
-            await interaction.response.send_modal(Name(self.bot))
+            await interaction.response.send_modal(Name())
     async def interaction_check(self, interaction: discord.Interaction):
         if interaction.user.id != self.ctx.author.id:
             await interaction.response.send_message(embed=discord.Embed(title='Error', description='Вы не можете взаимодействовать с этим сообщением, т.к его вызвал другой человек.', color=discord.Color.red()), ephemeral=True)
@@ -796,3 +800,143 @@ class SetInfo(discord.ui.View):
         return True
     async def on_timeout(self):
         self.stop()
+# Tickets ----------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------
+class TicketClose(discord.ui.View):
+    def __init__(self, *, timeout=None):
+        super().__init__(timeout=timeout)
+    @discord.ui.button(label="Закрыть Канал.", style=discord.ButtonStyle.red)
+    async def close(self, interaction:discord.Interaction, button: discord.ui.Button):
+        async def c1(channel: discord.TextChannel):
+            async for x in channel.history(oldest_first=True, limit=3):
+                if '>>> Тикет был успешно создан.' in x.content or '>>> Жалоба была успешно создана.' in x.content:
+                    await x.edit(content=x.content, view=None)
+        interaction.client.loop.create_task(c1(interaction.channel))
+        await interaction.response.send_message(content='`Канал удалится через 10 секунд...`')
+        pinid = await interaction.channel.pins()
+        pinid = int(str(pinid[0].content).replace('>>> Ваш id: ', ''))
+        member = await interaction.client.fetch_user(pinid)
+        await interaction.channel.set_permissions(target=member, overwrite=discord.PermissionOverwrite(send_messages=False))
+        await asyncio.sleep(10)
+        try:
+            await interaction.channel.delete()
+        except discord.errors.NotFound:
+            return
+class TicketButtons(discord.ui.View):
+    def __init__(self, *, timeout=None):
+        super().__init__(timeout=timeout)
+    @discord.ui.button(label="Жалоба", style=discord.ButtonStyle.red)
+    async def jaloba(self, interaction:discord.Interaction, button: discord.ui.Button):
+        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='tickets')
+        value = res.value
+        category = discord.utils.get(interaction.guild.categories, id=value['catid'])
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        for i in category.text_channels:
+            channel = interaction.client.get_channel(i.id)
+            a = await channel.pins()
+            for j, k in enumerate(a):
+                if int(str(a[j].content).replace('>>> Ваш id: ', '')) == int(interaction.user.id):
+                    await interaction.followup.send(content=f'Перейдите в канал <#{i.id}>.', ephemeral=True)
+                    return
+        overwrites = {
+            interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            interaction.user: discord.PermissionOverwrite(view_channel=True)
+            }
+        try:
+            all = await interaction.client.bd.rows(mode='list', category='ticketsperms')
+            for i in all.value:
+                if interaction.guild.id == int(i['guildid']):
+                    for j in i['roles']:
+                        role = interaction.guild.get_role(int(j))
+                        overwrites[role] =  discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        except Exception:
+            pass
+        channel = await interaction.guild.create_text_channel(f"Жалоба {interaction.user.name}", category=category, overwrites=overwrites)
+        await interaction.followup.send(content=f'Канал <#{channel.id}> создан.', ephemeral=True)
+        await channel.send(f'>>> <@!{interaction.user.id}>')
+        message = await channel.send(f'>>> Ваш id: {interaction.user.id}')
+        await message.pin()
+        async def d2(channel: discord.TextChannel):
+            async for x in channel.history(limit=10):
+                if x.type is discord.MessageType.pins_add:
+                    await x.delete()
+        interaction.client.loop.create_task(d2(channel))
+        message = await channel.send(f'>>> Жалоба была успешно создана.', view=TicketClose())
+    @discord.ui.button(label="Тикет", style=discord.ButtonStyle.green)
+    async def ticket(self, interaction:discord.Interaction, button: discord.ui.Button):
+        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='tickets')
+        value = res.value
+        category = discord.utils.get(interaction.guild.categories, id=value['catid'])
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        for i in category.text_channels:
+            a = await interaction.client.get_channel(i.id).pins()
+            for j, k in enumerate(a):
+                if int(str(a[j].content).replace('>>> Ваш id: ', '')) == int(interaction.user.id):
+                    await interaction.followup.send(content=f'Перейдите в канал <#{i.id}>.', ephemeral=True)
+                    return
+        overwrites = {
+            interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            interaction.user: discord.PermissionOverwrite(view_channel=True)
+            }          
+        try:
+            all = await interaction.client.bd.rows(mode='list', category='ticketsperms')
+            for i in all.value:
+                if interaction.guild.id == int(i['guildid']):
+                    for j in i['roles']:
+                        role = interaction.guild.get_role(int(j))
+                        overwrites[role] =  discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        except Exception:
+            pass
+        channel = await interaction.guild.create_text_channel(f"Тикет {interaction.user.name}", category=category, overwrites=overwrites)
+        await interaction.followup.send(content=f'Канал <#{channel.id}> создан.', ephemeral=True)
+        await channel.send(f'>>> <@!{interaction.user.id}>')
+        message = await channel.send(f'>>> Ваш id: {interaction.user.id}')
+        await message.pin()
+        async def d2(channel: discord.TextChannel):
+            async for x in channel.history(limit=10):
+                if x.type is discord.MessageType.pins_add:
+                    await x.delete()
+        interaction.client.loop.create_task(d2(channel))
+        message = await channel.send(f'>>> Тикет был успешно создан.', view=TicketClose())
+# Misc -------------------------------------------------------------------------------------------------------------
+class embedButtons(discord.ui.View):
+    def __init__(self, *, timeout=60.0, embeds: List[discord.Embed], ctx: commands.Context):
+        super().__init__(timeout=timeout)
+        self.embeds = embeds
+        self.count = 0
+        self.ctx = ctx
+        if len(self.embeds) < 2:
+            raise ValueError('You must have at least 2 embeds here.')
+    @discord.ui.button(label="⏪", style=discord.ButtonStyle.gray, disabled=True)
+    async def previous(self, interaction:discord.Interaction, button: discord.ui.Button):
+        self.count -= 1
+        try:
+            await interaction.message.edit(embed=self.embeds[self.count])
+        except IndexError:
+            return
+        if self.count == 0:
+            button.disabled = True
+        x: discord.ui.Button
+        for x in self.children:
+            if x.label == '⏩':
+                if x.disabled:
+                    x.disabled = False
+        await interaction.message.edit(embed=self.embeds[self.count], view=self)
+        await interaction.response.defer()
+    @discord.ui.button(label="⏩", style=discord.ButtonStyle.gray)
+    async def next(self, interaction:discord.Interaction, button: discord.ui.Button):
+        self.count += 1
+        if self.count + 1 == len(self.embeds):
+            button.disabled = True
+        x: discord.ui.Button
+        for x in self.children:
+            if x.label == '⏪':
+                if x.disabled:
+                    x.disabled = False
+        await interaction.message.edit(embed=self.embeds[self.count], view=self)
+        await interaction.response.defer()
+    async def interaction_check(self, interaction: discord.Interaction):
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message(embed=discord.Embed(title='Error', description='Вы не можете взаимодействовать с этим сообщением, т.к его вызвал другой человек.', color=discord.Color.red()), ephemeral=True)
+            return False
+        return True

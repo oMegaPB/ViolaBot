@@ -1,15 +1,17 @@
-import time
+import time, math, aiohttp, socket
 import discord, requests, json, datetime, os, asyncio, traceback
 from discord.ext import commands, tasks
+from typing import List, Dict, AsyncIterator
 from discord.ext.commands.errors import CommandNotFound, MemberNotFound
 from discord.ext.commands import has_permissions, MissingPermissions, MissingRequiredArgument, CommandInvokeError
-from Cogs.cmds import Buttons, Buttons_inChannel
+from Config.components import TicketButtons, TicketClose
 from Config.core import Viola
 
 class events(commands.Cog):
     def __init__(self, bot: Viola):
         self.bot = bot
         self.entrys = []
+        self.buffer: List[dict] = [] # buffer for next database update
     
     async def getmarryinfo(self, member: discord.Member):
         res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='marry')
@@ -28,12 +30,18 @@ class events(commands.Cog):
             id = int(i['channel_id'])
             channel = self.bot.get_channel(id)
             if channel is not None:
-                async for message in channel.history(limit=10, oldest_first=True):
-                    if ">>> Если у вас есть жалоба или вопрос то этот канал для вас." in message.content:
-                        try:
-                            await message.edit(view=Buttons(bot=self.bot))
-                        except discord.errors.Forbidden:
-                            pass
+                embed = discord.Embed(color=discord.Color.green())
+                embed.set_author(name='Tickets.', icon_url='https://w7.pngwing.com/pngs/680/355/png-transparent-icon-e-mail-e-mail-mail.png')
+                embed.description = '`Чтобы создать тикет или жалобу`\n`Нажмите на кнопку ниже.`'
+                try:
+                    embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{channel.guild.icon.url}')
+                except Exception:
+                    embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
+                async for message in channel.history(limit=1, oldest_first=True):
+                    try:
+                        await message.edit(embed=embed, view=TicketButtons())
+                    except discord.errors.Forbidden:
+                        pass
             category = self.bot.get_channel(int(i['catid']))
             if category is not None:
                 for k in category.text_channels:
@@ -41,9 +49,10 @@ class events(commands.Cog):
                     async for message in channel.history(limit=10, oldest_first=True):
                         if message.content == '>>> Тикет был успешно создан.' or message.content =='>>> Жалоба была успешно создана.':
                             try:
-                                await message.edit(view=Buttons_inChannel(bot=self.bot))
+                                await message.edit(view=TicketClose())
                             except discord.errors.Forbidden:
                                 pass
+    
     @tasks.loop(seconds=250)
     async def update_VoiceChannel_members(self):
         all = await self.bot.bd.rows(mode='list', category='voicemembers')
@@ -55,16 +64,52 @@ class events(commands.Cog):
             except Exception:
                 pass
             await asyncio.sleep(3)
-
+    
+    async def GetAllVoiceMembers(self) -> List[discord.Member]:
+        members = []
+        for g in self.bot.guilds:
+            for c in g.voice_channels:
+                for m in c.members:
+                    if not m.bot:   
+                        members.append(m)
+        return members
+    
+    @tasks.loop(seconds=1)
+    async def update_VoiceTime_info(self):
+        for x in self.buffer:
+            members = await self.GetAllVoiceMembers()
+            prevamount = x['amount'] + 1
+            self.buffer.remove(x)
+            for y in members:
+                if x['memberid'] == y.id:
+                    self.buffer.append({'memberid': x['memberid'], 'guildid': x['guildid'], 'amount': prevamount})
+    @tasks.loop(seconds=15)
+    async def update_VoiceTime_Database(self):
+        count = 0
+        for x in self.buffer:
+            res = await self.bot.bd.fetch({'guildid': x['guildid'], 'memberid': x['memberid']}, category='voice')
+            self.buffer.pop(count)
+            self.buffer.append({'memberid': x['memberid'], 'guildid': x['guildid'], 'amount': 0})
+            if res.status:
+                amount = res.value['amount'] + x['amount']
+                await self.bot.bd.remove({'guildid': x['guildid'], 'memberid': x['memberid']}, category='voice')
+                await self.bot.bd.add({'guildid': x['guildid'], 'memberid': x['memberid'], 'amount': amount}, category='voice')
+            count += 1   
+    
+    async def start_all_tasks(self):
+        await self.bot.load_extension("Cogs.music")
+        for x in await self.GetAllVoiceMembers():
+            self.buffer.append({'memberid': x.id, 'guildid': x.guild.id, 'amount': 0})
+        self.update_VoiceChannel_members.start()
+        self.update_VoiceTime_info.start()
+        self.update_VoiceTime_Database.start()
+        await self.tickets_renew()
+    
     @commands.Cog.listener()
     async def on_ready(self):
         # await self.bot.sync()
-        await self.bot.load_extension("Cogs.music")
-        self.update_VoiceChannel_members.start()
-        await self.tickets_renew()
+        await self.start_all_tasks()
         print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{self.bot.user.name}/INFO]: Logged in as {self.bot.user.name}.")
-        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{self.bot.user.name}/INFO]: Bot Owner: {self.bot.get_user(self.bot.owner_id).name}")
-        print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] [{self.bot.user.name}/INFO]: Bot started at {time.time() - self.bot.time} seconds.')
         print('-------------------------------------------')
     
     @commands.Cog.listener()
@@ -120,6 +165,11 @@ class events(commands.Cog):
         again = False
         if before.channel is None and after.channel is not None:
             print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} зашел в канал {after.channel.name} | {after.channel.guild.name}')
+            self.buffer.append({'memberid': member.id, 'guildid': member.guild.id, 'amount': 0})
+            res = await self.bot.bd.fetch({'guildid': after.channel.guild.id, 'memberid': member.id}, category='voice')
+            if not res.status:
+                if not member.bot:
+                    await self.bot.bd.add({'guildid': after.channel.guild.id, 'memberid': member.id, 'amount': 0}, category='voice')
         elif before.channel is not None and after.channel is None:
             print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} покинул канал {before.channel.name} | {before.channel.guild.name}')
             res = await self.bot.bd.fetch({'guildid': member.guild.id}, category='logs')
@@ -162,7 +212,7 @@ class events(commands.Cog):
             # await ctx.send("`Неизвестная команда. Используйте s!help Для списка команд.`")
             return
         elif isinstance(error, MissingPermissions):
-            await ctx.channel.send(embed=discord.Embed(title='Error', description=f'Вам не хватает прав для данного действия.\nВам нужны права:(**{error.missing_permissions[0]}**)', color=discord.Color.red()))
+            await ctx.channel.send(embed=discord.Embed(title='Ошибка', description=f'`Вам не хватает прав для данного действия.`\n`Вам нужны права:` **{error.missing_permissions[0]}**', color=discord.Color.red()))
         elif isinstance(error, MissingRequiredArgument):
             await ctx.send(f'`Не хватает аргументов. Укажите аргумент:` **{error.param}**')
         elif isinstance(error, MemberNotFound):
@@ -177,8 +227,7 @@ class events(commands.Cog):
     
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
-        # print(interaction)
-        return
+        pass
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -211,7 +260,7 @@ class events(commands.Cog):
             else:
                 msgs = res.value['amount']
                 level1 = self.bot.GetLevel(msgs)
-                await self.bot.bd.remove(res.value, category='messages')
+                await self.bot.bd.remove({'guildid': ctx.guild.id, 'memberid': message.author.id}, category='messages')
                 await self.bot.bd.add({'guildid': message.guild.id, 'memberid': message.author.id, 'amount': msgs+1}, category='messages')
                 res = await self.bot.bd.fetch({'guildid': message.guild.id, 'memberid': message.author.id}, category='messages')
                 msgs = res.value['amount']
@@ -232,7 +281,7 @@ class events(commands.Cog):
                 old = False
                 a = round(entry.created_at.timestamp())
                 b = round(datetime.datetime.utcnow().timestamp())
-                if b - a > 10850:
+                if b - a > 25:
                     old = True
                 if not int(message.channel.id) == channel.id and int(value['guildid']) == message.guild.id:
                     if message.attachments:

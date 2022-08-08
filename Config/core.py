@@ -1,4 +1,4 @@
-import discord, lavalink
+import discord, lavalink, asyncio, aiohttp
 import datetime, typing
 from discord.ext import commands
 from datetime import datetime as dt, timedelta
@@ -8,24 +8,31 @@ class Viola(commands.Bot):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.bd = MongoDB()
-        self.time = kwargs.get('start_time')
         print('-------------------------------------------')
         print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] [Viola/INFO]: Connected to database successfully.')
-        self.lavalinkmode = 'public'
-        print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] [Viola/INFO]: selected lavalink mode: [{self.lavalinkmode}].')
-
+        self._lavalinkmode = 'lemehost'
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
+    
+    @property
+    def lavalinkmode(self) -> str:
+        return self._lavalinkmode
+    
+    @lavalinkmode.setter
+    def lavalinkmode(self, value: str) -> None:
+        self._lavalinkmode = value
+    
     async def sync(self) -> None:
         # guild = discord.Object(id=1000466637478178910)
         # self.tree.copy_global_to(guild=guild)
         await self.tree.sync() # guild=guild
-
+    
     async def getLogChannel(self, guildid) -> typing.Optional[discord.TextChannel]:
         res = await self.bd.fetch({'guildid': guildid}, category='logs')
         if res.status:
             value = res.value
             channel: discord.TextChannel = self.get_channel(int(value['channel_id']))
             return channel
-        return None
+        return None  
     
     def GetTime(self, seconds: int) -> str:
         sec = timedelta(seconds=seconds)
@@ -51,7 +58,7 @@ class Viola(commands.Bot):
                 res = "{}:{}".format(minute, second).replace('00', '0')
         if res[-2:] == ':0':
             res += "0"
-        return res
+        return res   
     
     def GetLevel(self, amount: int) -> int:
         amount += 1
@@ -103,7 +110,26 @@ class Viola(commands.Bot):
 
 class ViolaEmbed(discord.Embed):
     def __init__(self, **kwargs):
+        self.format = kwargs.pop('format') if 'format' in kwargs else 'success'
+        self.ctx = kwargs.pop('ctx') if 'ctx' in kwargs else None
+        if not isinstance(self.ctx, commands.Context) and not self.ctx is None:
+            raise discord.errors.ClientException('ctx not context')
         super().__init__(**kwargs)
+        if self.ctx:
+            try:
+                self.set_footer(text=f'{self.ctx.guild.name}', icon_url=f'{self.ctx.guild.icon.url}')
+            except Exception:
+                self.set_footer(text=f'{self.ctx.guild.name}', icon_url=f'{self.ctx.me.avatar.url}')
+        if self.format != None:
+            colors = {'success': discord.Color.green(), 'warning': discord.Color.yellow(), 'error': discord.Color.red()}
+            titles = {'success': 'Успешно.', 'warning': 'Внимание.', 'error': 'Ошибка.'}
+            urls = {
+                'success': 'https://cdn.discordapp.com/emojis/1006317088253681734.webp',
+                'warning': 'https://cdn.discordapp.com/emojis/1006317089683951718.webp',
+                'error': 'https://cdn.discordapp.com/emojis/1006317086471094302.webp'
+            }
+            self.set_author(icon_url=urls[self.format], name=titles[self.format])
+            self.color = colors[self.format]
 
 class LavalinkVoiceClient(discord.VoiceClient):
     def __init__(self, client: Viola, channel: discord.abc.Connectable):
@@ -126,4 +152,3 @@ class LavalinkVoiceClient(discord.VoiceClient):
         await self.channel.guild.change_voice_state(channel=None)
         player.channel_id = None
         self.cleanup()
-

@@ -1,4 +1,5 @@
 import re
+import traceback
 import discord, asyncio
 import lavalink
 from discord.ext import commands
@@ -15,17 +16,19 @@ class Music(commands.Cog):
         self.player = None
         self.bot.loop.create_task(self.genseconds())
         self.bot.loop.create_task(self.helper())
-        if not hasattr(bot, 'lavalink'):
-            bot.lavalink = lavalink.Client(bot.user.id)
-            if bot.lavalinkmode == 'public':
-                bot.lavalink.add_node('lava-ny-01.thermalhosting.com', 4018, 'thermalhosting.com', 'us', 'default-node')
-            elif bot.lavalinkmode == 'heroku':
-                bot.lavalink.add_node('lavalink6.herokuapp.com', 80, 'lavalinkVI', 'eu', 'default-node')
-            elif bot.lavalinkmode == 'local':
-                bot.lavalink.add_node('192.168.56.1', 8080, 'test', 'eu', 'default-node')
-            else:
-                raise ValueError('Invalid Lavalink Mode')
+        self.bot.loop.create_task(self.connectnodes())
         lavalink.add_event_hook(self.track_hook)
+    async def connectnodes(self):
+        # ws = await self.bot.session.ws_connect('ws://{}:{}'.format('23.88.73.88', 11928), headers={'authorization': 'youshallnotpass'},heartbeat=60)
+        # print(ws)
+        # await ws.close()
+        if not hasattr(self.bot, 'lavalink'):
+            self.bot.lavalink = lavalink.Client(self.bot.user.id)
+            # ----------------------------------------------------------------------------------------
+            data = [['lavalink6.herokuapp.com', 80, 'lavalinkVI'], ['192.168.56.1', 8080, 'test'], ['23.88.73.88', 11928, 'youshallnotpass'], ['lava-ny-01.thermalhosting.com', 4018, 'thermalhosting.com']]
+            for host, port, password in data:
+                if host == '23.88.73.88':
+                    self.bot.lavalink.node_manager.add_node(host=host, port=port, password=password, region='eu', resume_key='default-node', resume_timeout=60, name=None, reconnect_attempts=3)
     async def genseconds(self):
         while True:
             try:
@@ -39,6 +42,8 @@ class Music(commands.Cog):
             self.ed = False
             await asyncio.sleep(7)
     async def cog_before_invoke(self, ctx):
+        if ctx.command.name == 'node':
+            return
         guild_check = ctx.guild is not None
         if guild_check:
             await self.ensure_voice(ctx)
@@ -54,7 +59,7 @@ class Music(commands.Cog):
             except lavalink.NodeException:
                 print('node exception.')
                 await asyncio.sleep(1)
-        should_connect = ctx.command.name in ('play',)
+        should_connect = ctx.command.name in ('play', 'p', )
         if not self.player.is_connected:
             if not should_connect:
                 raise commands.CommandInvokeError('Not connected.')
@@ -70,18 +75,11 @@ class Music(commands.Cog):
                 pass
             embed = discord.Embed(color=discord.Color.green())
             embed.title = 'Музыка больше не проигрывается.'
-            a: discord.Member = player.fetch(key=player.guild_id)
-            if a is not None:
-                player.delete(key=guild.id)
-                embed.description = f'Я покинула голосовой канал.'
-                embed.set_footer(text=f'Действие запрошено {a}.', icon_url=f'{a.avatar.url}')
-                embed.color = discord.Color.blurple()
-            else:
-                embed.description = '`Я больше не проигрываю музыку, так-как песен в очереди больше нет.`'
-                try:
-                    embed.set_footer(text=f'{guild.name}', icon_url=f'{guild.icon.url}')
-                except Exception:
-                    embed.set_footer(text=f'{guild.name}', icon_url=f'{self.bot.user.avatar.url}')
+            embed.description = '`Я больше не проигрываю музыку, так-как песен в очереди больше нет.`'
+            try:
+                embed.set_footer(text=f'{guild.name}', icon_url=f'{guild.icon.url}')
+            except Exception:
+                embed.set_footer(text=f'{guild.name}', icon_url=f'{self.bot.user.avatar.url}')
             mess = player.fetch('mess')
             await mess.edit(embed=embed, view=None)
             player.delete('mess')
@@ -114,7 +112,7 @@ class Music(commands.Cog):
                 else:
                     repeat = ''
                 progress = '**[**' + ('🟩' * int(percents // 10)) + ('🟥' * (10 - int(percents // 10))) + f'**]** `{self.bot.GetTime(seconds)}`'
-                embed.description = f'**Сейчас играет:**\n[**{name}**]({url})\n`Длительность:` **[{tim}]**\n`Запросил:` **{self.bot.get_user(player.current.requester)}**\n\n{progress}{repeat}'
+                embed.description = f'**Сейчас играет:**\n[**{name}**]({url})\n`Длительность:` **[{tim}]**\n`Запросил:` **{self.bot.get_user(player.current.requester)}**\n\n{progress}{repeat}' #\nNode: `{player.node}`
                 embed.set_thumbnail(url=thumb(player.current.identifier))
                 while True:
                     try:
@@ -131,7 +129,7 @@ class Music(commands.Cog):
         elif isinstance(event, lavalink.events.TrackExceptionEvent):
             print(event.exception)
             print('exception!')
-
+    
     @commands.command(aliases=['p'])
     async def play(self, ctx: commands.Context, *, Трек):
         query: str = Трек

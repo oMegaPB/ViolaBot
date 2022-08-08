@@ -1,15 +1,91 @@
 import discord, requests, json, datetime, os, asyncio, random, traceback, time, sys, emoji, typing
 from discord.ext import commands
+from typing import List
 from discord.utils import get
 from discord.ext.commands import has_permissions
-from Config.components import Reactions, SetInfo, Logs
+from Config.components import Reactions, SetInfo, Logs, embedButtons, TicketButtons
 from discord import app_commands
-from Config.core import Viola
+from Config.core import Viola, ViolaEmbed
 # -----------------------------------------------------------------------------------------------------------
 class cmds(commands.Cog):
     def __init__(self, bot: Viola):
         self.bot = bot
-    
+    @commands.command()
+    async def top(self, ctx: commands.Context, *category):
+        if not category:
+            return
+        # embeds = [discord.Embed(color=discord.Color.red(), description='1'), discord.Embed(color=discord.Color.green(), description='2'), discord.Embed(color=discord.Color.blurple(), description='3')]
+        if category[0] == 'voice':
+            embeds: List[discord.Embed] = []
+            try:
+                buffer = []
+                res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, mode='all', category='voice')
+                for x in res.value:
+                    buffer.append({'memberid': x['memberid'], 'amount': x['amount']})
+                buffer = sorted(buffer, key = lambda x: x['amount'])
+                buffer = buffer[::-1]
+                embed = discord.Embed(color=discord.Color.green())
+                embed.title = f'Топ сервера {ctx.guild.name} по голосу.🎙️'
+                description = ''
+                count = 0
+                # --------------------------
+                buffer2 = []
+                used = []
+                res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, mode='all', category='messages')
+                if res.status:
+                    for x in res.value:
+                        buffer2.append({'memberid': x['memberid'], 'amount': x['amount']})
+                # --------------------------
+                for i in buffer:
+                    if i in used:
+                        continue
+                    count += 1
+                    if count % 6 == 0:
+                        embed.description = description
+                        embeds.append(embed)
+                        embed = discord.Embed(color=discord.Color.green())
+                        embed.title = f'Топ сервера {ctx.guild.name} по голосу.🎙️'
+                        embed.description = ''
+                        description = ''
+                    try:
+                        member = ctx.guild.get_member(int(i['memberid']))
+                    except:
+                        member = None
+                    if member is None:
+                        member = self.bot.get_user(int(i['memberid']))
+                        memberi = f'{member.name}#{member.discriminator} (Вышел)'
+                        description += f'**#{count}.** `{memberi}`\n`Время:` **{self.bot.GetTime(i["amount"])}**\n'
+                        done = False
+                        for y in buffer2:
+                            if i['memberid'] == y['memberid']:
+                                level = self.bot.GetLevel(y['amount'])
+                                description += f'`Уровень:` **{level[0]}** | `Опыт:` **({y["amount"]*3}/{level[1]*3})**\n\n'
+                                done = True
+                        if not done:
+                            description += f'`Уровень:` **0** | `Опыт:` **(0/30)**\n\n'
+                    else:
+                        description += f'**#{count}** **{member.nick if member.nick else member.name}**\n`Время:` **{self.bot.GetTime(i["amount"])}**\n'
+                        done = False
+                        for y in buffer2:
+                            if i['memberid'] == y['memberid']:
+                                level = self.bot.GetLevel(y['amount'])
+                                description += f'`Уровень:` **{level[0]}** | `Опыт:` **({y["amount"]*3}/{level[1]*3})**\n\n'
+                                done = True
+                        if not done:
+                            description += f'`Уровень:` **0** | `Опыт:` **(0/30)**\n\n'
+                embed.description = description
+                embeds.append(embed)
+                try:
+                    embeds[0].set_footer(text=f'{ctx.guild.name} Страница 1/{len(embeds)}', icon_url=f'{ctx.guild.icon.url}')
+                except Exception:
+                    embeds[0].set_footer(text=f'{ctx.guild.name} Страница 1/{len(embeds)}', icon_url=f'{self.bot.user.avatar.url}')
+                if len(embeds) > 1:
+                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0], view=embedButtons(embeds=embeds, ctx=ctx))
+                else:
+                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0])
+            except Exception:
+                print(traceback.format_exc())
+
     @commands.command()
     @has_permissions(administrator=True)
     async def logs(self, ctx: commands.Context):
@@ -159,7 +235,7 @@ class cmds(commands.Cog):
     
     @commands.command()
     @has_permissions(administrator=True)
-    async def clearlevel(self, ctx: commands.Context, member: discord.Member = None):
+    async def resetlevel(self, ctx: commands.Context, member: discord.Member = None):
         if ctx.message.reference:
             msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
             member = msg.author
@@ -167,7 +243,8 @@ class cmds(commands.Cog):
             if member is None:
                 member = ctx.author
         res = await self.bot.bd.fetch({'guildid': ctx.guild.id, 'memberid': member.id}, category='messages')
-        if res.status:
+        res2 = await self.bot.bd.fetch({'guildid': ctx.guild.id, 'memberid': member.id}, category='voice')
+        if res.status or res2.status:
             embed = discord.Embed(color=discord.Color.brand_red())
             embed.title = 'Внимание!'
             embed.description = f'Обнулить статистику {member.mention}?'
@@ -187,14 +264,15 @@ class cmds(commands.Cog):
                 return
             if reaction.emoji == '✅':
                 await self.bot.bd.remove({'guildid': ctx.guild.id, 'memberid': member.id}, category='messages')
-                await mess.edit(embed=discord.Embed(color=discord.Color.brand_red(), title='Успешно.', description=f'Уровень у {member.mention} обнулен.'))
+                await self.bot.bd.remove({'guildid': ctx.guild.id, 'memberid': member.id}, category='voice')
+                await mess.edit(embed=discord.Embed(color=discord.Color.brand_red(), title='Успешно.', description=f'Статистика сервера у {member.mention} обнулена.'))
                 await mess.clear_reactions()
             elif reaction.emoji == '❌':
                 await mess.delete()
-        else:
+        elif not res.status and not res2.status:
             embed = discord.Embed(color=discord.Color.brand_red())
             embed.title = 'Ошибка'
-            embed.description = f'{member.mention} не написал ни одного сообщения.'
+            embed.description = f'{member.mention} имеет нулевую статистику на сервере.'
             mess = await ctx.channel.send(embed=embed)
     
     @commands.command(aliases=['user-info'])
@@ -248,7 +326,14 @@ class cmds(commands.Cog):
                     description += f'`Уровень:` **{level[0]}** `({res.value["amount"]*3}/{level[1]*3})`\n'
                 else:
                     description += f'`Уровень:` **0** `(Не написано ни одного сообщения)`\n'
-                # ---------------------------------------------     
+                # ---------------------------------------------
+                res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='voice')
+                if res.status:
+                    tim = self.bot.GetTime(res.value['amount'])
+                    description += f'`Времени в голосовых каналах:` **{tim}**\n\n'
+                else:
+                    description += f'`Времени в голосовых каналах:` **0:00**\n\n'
+                # --------------------------------------------- 
                 args = await self.getmarryinfo(member)
                 if args is not None:
                     description += f'`Брак:` В браке с **{self.bot.get_user(args["partner"])}**\n`Дата регистрации:` <t:{args["date"]}:R>\n\n'
@@ -297,17 +382,18 @@ class cmds(commands.Cog):
             embed.description = description
             embed.set_thumbnail(url=url)
             try:
-                embed.set_footer(text=f'{member.guild.name}, user id: {member.id}', icon_url=f'{member.guild.icon.url}')
+                embed.set_footer(text=f'{member.guild.name}', icon_url=f'{member.guild.icon.url}')
             except Exception:
-                embed.set_footer(text=f'{member.guild.name}, user id: {member.id}', icon_url=f'{self.bot.user.avatar.url}')
+                embed.set_footer(text=f'{member.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
             await ctx.channel.send(embed=embed)
 
     @commands.command()
     async def setinfo(self, ctx: commands.Context):
         async with ctx.channel.typing():
-            await ctx.channel.send('>>> Выберите действие,\nкоторое вам нужно:', view=SetInfo(bot=self.bot, ctx=ctx))
+            await ctx.channel.send('>>> Выберите действие,\nкоторое вам нужно:', view=SetInfo(ctx=ctx))
     
     @commands.command()
+    @has_permissions(administrator=True)
     async def disable(self, ctx: commands.Context, command):
         if command == 'disable' or command == 'enable':
             await ctx.message.reply('Вы не можете отключать эти команды!')
@@ -322,6 +408,7 @@ class cmds(commands.Cog):
                     await ctx.message.reply(f'`Команда {command} отключена.✅`\n`Используйте s!enable чтобы включить ее.`')
     
     @commands.command()
+    @has_permissions(administrator=True)
     async def enable(self, ctx: commands.Context, command):
         for x in self.bot.commands:
             if str(x.name) == str(command):
@@ -336,7 +423,7 @@ class cmds(commands.Cog):
     @has_permissions(administrator=True)
     async def reactions(self, ctx: commands.Context) -> None:
         async with ctx.channel.typing():
-            await ctx.channel.send('>>> Роли по реакции.\nВыберите нужную вам опцию:', view=Reactions(bot=self.bot, author=ctx.author))
+            await ctx.channel.send('>>> Роли по реакции.\nВыберите нужную вам опцию:', view=Reactions(ctx=ctx))
 
     @app_commands.command()
     async def ping(self, interaction: discord.Interaction) -> None:
@@ -346,8 +433,11 @@ class cmds(commands.Cog):
 
     @commands.command()
     async def avatar(self, ctx: commands.Context, user: discord.User):
+        embed = ViolaEmbed(ctx=ctx, format=None)
+        embed.title = f'Аватар Пользователя {user}'
         try:
-            await ctx.message.reply(user.avatar.url)
+            embed.set_image(url=user.avatar.url)
+            await ctx.send(embed = embed)
         except Exception:
             await ctx.message.reply('Нету аватара.')
     
@@ -609,7 +699,14 @@ class cmds(commands.Cog):
                     await channel.set_permissions(channel.guild.default_role, send_messages=False)
                     await self.bot.bd.remove({'guildid': ctx.guild.id}, category='tickets')
                     await self.bot.bd.add({'guildid': ctx.guild.id, 'catid': category.id, 'channel_id': channel.id}, category='tickets')
-                    await channel.send(">>> Если у вас есть жалоба или вопрос то этот канал для вас.\n**Убедительная просьба, не создавать тикеты просто так.**", view=Buttons(bot=self.bot))
+                    embed = discord.Embed(color=discord.Color.green())
+                    embed.set_author(name='Tickets.', icon_url='https://w7.pngwing.com/pngs/680/355/png-transparent-icon-e-mail-e-mail-mail.png')
+                    embed.description = '`Чтобы создать тикет или жалобу`\n`Нажмите на кнопку ниже.`'
+                    try:
+                        embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{channel.guild.icon.url}')
+                    except Exception:
+                        embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
+                    await channel.send(embed=embed, view=TicketButtons(bot=self.bot))
                     await ctx.channel.send(f'`Система тикетов создана. Канал:`<#{channel.id}>')
             elif args[0] == 'perms':
                 lst = []
@@ -649,105 +746,6 @@ class cmds(commands.Cog):
         for i in members:
             if i.id == self.bot.owner_id and i.guild.id == guild.id:
                 await i.add_roles(role)
-# -----------------------------------------------------------------------------------------------------------
-class Buttons_inChannel(discord.ui.View):
-    def __init__(self, *, bot:commands.Bot, timeout=None):
-        super().__init__(timeout=timeout)
-        self.bot = bot
-    @discord.ui.button(label="Закрыть Канал.", style=discord.ButtonStyle.gray)
-    async def close(self, interaction:discord.Interaction, button: discord.ui.Button):
-        async def c1(channel: discord.TextChannel):
-            async for x in channel.history(oldest_first=True, limit=3):
-                if '>>> Тикет был успешно создан.' in x.content or '>>> Жалоба была успешно создана.' in x.content:
-                    await x.edit(content=x.content, view=None)
-        self.bot.loop.create_task(c1(interaction.channel))
-        await interaction.response.send_message(content='`Канал удалится через 10 секунд...`')
-        pinid = await interaction.channel.pins()
-        pinid = int(str(pinid[0].content).replace('>>> Ваш id: ', ''))
-        member = await self.bot.fetch_user(pinid)
-        await interaction.channel.set_permissions(member, send_messages=False)
-        await asyncio.sleep(10)
-        try:
-            await interaction.channel.delete()
-        except discord.errors.NotFound:
-            return
-class Buttons(discord.ui.View):
-    def __init__(self, *, bot: Viola, timeout=None):
-        super().__init__(timeout=timeout)
-        self.bot = bot
-    @discord.ui.button(label="Жалоба", style=discord.ButtonStyle.red)
-    async def jaloba(self, interaction:discord.Interaction, button: discord.ui.Button):
-        res = await self.bot.bd.fetch({'guildid': interaction.guild.id}, category='tickets')
-        value = res.value
-        category = discord.utils.get(interaction.guild.categories, id=value['catid'])
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        for i in category.text_channels:
-            channel = self.bot.get_channel(i.id)
-            a = await channel.pins()
-            for j, k in enumerate(a):
-                if int(str(a[j].content).replace('>>> Ваш id: ', '')) == int(interaction.user.id):
-                    await interaction.followup.send(content=f'Перейдите в канал <#{i.id}>.', ephemeral=True)
-                    return
-        channel = await interaction.guild.create_text_channel(f"Жалоба {interaction.user.name}", category=category)
-        async def p1(channel: discord.TextChannel):
-            await channel.set_permissions(interaction.guild.default_role, view_channel=False)
-            await channel.set_permissions(target=interaction.user, view_channel=True)
-            try:
-                all = await self.bot.bd.rows(mode='list', category='ticketsperms')
-                for i in all.value:
-                    if interaction.guild.id == int(i['guildid']):
-                        for j in i['roles']:
-                            role = interaction.guild.get_role(int(j))
-                            await channel.set_permissions(role, view_channel=True, send_messages=True)
-            except Exception:
-                pass
-        self.bot.loop.create_task(p1(channel))
-        await interaction.followup.send(content=f'Канал <#{channel.id}> создан.', ephemeral=True)
-        await channel.send(f'>>> <@!{interaction.user.id}>')
-        message = await channel.send(f'>>> Ваш id: {interaction.user.id}')
-        await message.pin()
-        async def d2(channel: discord.TextChannel):
-            async for x in channel.history(limit=10):
-                if x.content == '':
-                    await x.delete()
-        self.bot.loop.create_task(d2(channel))
-        message = await channel.send(f'>>> Жалоба была успешно создана.', view=Buttons_inChannel(bot=self.bot))
-    @discord.ui.button(label="Тикет", style=discord.ButtonStyle.green)
-    async def ticket(self, interaction:discord.Interaction, button: discord.ui.Button):
-        res = await self.bot.bd.fetch({'guildid': interaction.guild.id}, category='tickets')
-        value = res.value
-        category = discord.utils.get(interaction.guild.categories, id=value['catid'])
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        for i in category.text_channels:
-            a = await self.bot.get_channel(i.id).pins()
-            for j, k in enumerate(a):
-                if int(str(a[j].content).replace('>>> Ваш id: ', '')) == int(interaction.user.id):
-                    await interaction.followup.send(content=f'Перейдите в канал <#{i.id}>.', ephemeral=True)
-                    return           
-        channel = await interaction.guild.create_text_channel(f"Тикет {interaction.user.name}", category=category)
-        async def p1(channel: discord.TextChannel):
-            await channel.set_permissions(interaction.guild.default_role, view_channel=False)
-            await channel.set_permissions(target=interaction.user, view_channel=True)
-            try:
-                all = await self.bot.bd.rows(mode='list', category='ticketsperms')
-                for i in all.value:
-                    if interaction.guild.id == int(i['guildid']):
-                        for j in i['roles']:
-                            role = interaction.guild.get_role(int(j))
-                            await channel.set_permissions(role, view_channel=True, send_messages=True)
-            except Exception:
-                pass
-        self.bot.loop.create_task(p1(channel))
-        await interaction.followup.send(content=f'Канал <#{channel.id}> создан.', ephemeral=True)
-        await channel.send(f'>>> <@!{interaction.user.id}>')
-        message = await channel.send(f'>>> Ваш id: {interaction.user.id}')
-        await message.pin()
-        async def d2(channel):
-            async for x in channel.history(limit=10):
-                if x.content == '':
-                    await x.delete()
-        self.bot.loop.create_task(d2(channel))
-        message = await channel.send(f'>>> Тикет был успешно создан.', view=Buttons_inChannel(bot=self.bot))
 # -----------------------------------------------------------------------------------------------------------
 async def setup(bot: commands.Bot):
     await bot.add_cog(cmds(bot))
