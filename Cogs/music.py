@@ -27,7 +27,7 @@ class Music(commands.Cog):
             # ----------------------------------------------------------------------------------------
             data = [['lavalink6.herokuapp.com', 80, 'lavalinkVI'], ['192.168.56.1', 8080, 'test'], ['23.88.73.88', 11928, 'youshallnotpass'], ['lava-ny-01.thermalhosting.com', 4018, 'thermalhosting.com']]
             for host, port, password in data:
-                if host == '23.88.73.88':
+                if host == 'lava-ny-01.thermalhosting.com':
                     self.bot.lavalink.node_manager.add_node(host=host, port=port, password=password, region='eu', resume_key='default-node', resume_timeout=60, name=None, reconnect_attempts=3)
     async def genseconds(self):
         while True:

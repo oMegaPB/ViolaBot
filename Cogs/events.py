@@ -1,4 +1,3 @@
-import time, math, aiohttp, socket
 import discord, requests, json, datetime, os, asyncio, traceback
 from discord.ext import commands, tasks
 from typing import List, Dict, AsyncIterator

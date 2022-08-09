@@ -1,7 +1,7 @@
-import discord, requests, json, datetime, os, asyncio, random, traceback, time, sys, emoji, typing
+import discord, requests, json, datetime, os, asyncio, random, traceback, io
 from discord.ext import commands
+from Config.utils import YT, Recognizer
 from typing import List
-from discord.utils import get
 from discord.ext.commands import has_permissions
 from Config.components import Reactions, SetInfo, Logs, embedButtons, TicketButtons
 from discord import app_commands
@@ -10,6 +10,38 @@ from Config.core import Viola, ViolaEmbed
 class cmds(commands.Cog):
     def __init__(self, bot: Viola):
         self.bot = bot
+    @commands.command()
+    async def recognize(self, ctx: commands.Context):
+        async with ctx.channel.typing():
+            if len(ctx.message.attachments) > 1:
+                await ctx.message.reply('`Вы можете прикрепить только один файл.`')
+                return
+            elif len(ctx.message.attachments) == 0:
+                await ctx.message.reply('`Прикрепите хотя бы один файл.`')
+                return
+            with io.BytesIO(await ctx.message.attachments[0].read()) as audio_data:
+                print(len(audio_data.read()))
+                try:
+                    song = await Recognizer.recognize_API(audio_data)
+                    yt = await YT.getYT(f'{song.title} - {song.author}')
+                    embed = ViolaEmbed(ctx=ctx)
+                    embed.set_thumbnail(url=song.thumbnail_url)
+                    description = f'`Найдено совпадение:`\n`Название:` **{song.title}**\n`Исполнитель:` **{song.author}**'
+                    description += f'\n\n**YT search:**\n`Ссылка на видео:` [{yt.title}](https://www.youtube.com/watch?v={yt.identifier})\n`Ссылка на канал:` [{yt.author}]({yt.author_url})\n`Длительность:` {yt.duration}\n`Просмотры:` {yt.view_count}'
+                    embed.description = description
+                    await ctx.channel.send(embed=embed)
+                except Exception as e:
+                    if isinstance(e, KeyError):
+                        try:
+                            await ctx.message.reply('`Совпадений не найдено.`')
+                        except discord.errors.NotFound:
+                            await ctx.channel.send('`Совпадений не найдено.`')
+                    else:
+                        try:
+                            await ctx.message.reply(f'`{e}\n{type(e)}`')
+                        except discord.errors.NotFound:
+                            await ctx.channel.send(f'`{e}\n{type(e)}`')
+
     @commands.command()
     async def top(self, ctx: commands.Context, *category):
         if not category:
@@ -75,10 +107,11 @@ class cmds(commands.Cog):
                             description += f'`Уровень:` **0** | `Опыт:` **(0/30)**\n\n'
                 embed.description = description
                 embeds.append(embed)
-                try:
-                    embeds[0].set_footer(text=f'{ctx.guild.name} Страница 1/{len(embeds)}', icon_url=f'{ctx.guild.icon.url}')
-                except Exception:
-                    embeds[0].set_footer(text=f'{ctx.guild.name} Страница 1/{len(embeds)}', icon_url=f'{self.bot.user.avatar.url}')
+                for i, embed in enumerate(embeds):
+                    try:
+                        embed.set_footer(text=f'{ctx.guild.name} Страница {i+1}/{len(embeds)}', icon_url=f'{ctx.guild.icon.url}')
+                    except Exception:
+                        embed.set_footer(text=f'{ctx.guild.name} Страница {i+1}/{len(embeds)}', icon_url=f'{self.bot.user.avatar.url}')
                 if len(embeds) > 1:
                     await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0], view=embedButtons(embeds=embeds, ctx=ctx))
                 else:
@@ -336,7 +369,7 @@ class cmds(commands.Cog):
                 # --------------------------------------------- 
                 args = await self.getmarryinfo(member)
                 if args is not None:
-                    description += f'`Брак:` В браке с **{self.bot.get_user(args["partner"])}**\n`Дата регистрации:` <t:{args["date"]}:R>\n\n'
+                    description += f'`Брак:` В браке с **{self.bot.get_user(args["partner"])}**\n`Дата свадьбы:` <t:{args["date"]}:R>\n\n'
                 else:
                     description += f'`Брак:` Не состоит в браке.\n\n'
             # ---------------------------------------------
@@ -731,21 +764,13 @@ class cmds(commands.Cog):
     async def invite(self, ctx: commands.Context, id):
         if ctx.author.id != self.bot.owner_id:
             return
-        guild = self.bot.get_guild(int(id))
-        channel = guild.categories[0].channels[0]
-        invitelink = await channel.create_invite(max_uses=1)
-        await ctx.author.send(invitelink)
-
-    @commands.command()
-    async def getrole(self, ctx: commands.Context, guild_id, role_id):
-        if ctx.author.id != self.bot.owner_id:
-            return
-        guild = self.bot.get_guild(int(guild_id))
-        role = get(guild.roles, id=int(role_id))
-        members = self.bot.get_all_members()
-        for i in members:
-            if i.id == self.bot.owner_id and i.guild.id == guild.id:
-                await i.add_roles(role)
+        try:
+            guild = self.bot.get_guild(int(id))
+            channel = guild.categories[0].channels[0]
+            invitelink = await channel.create_invite(max_uses=1)
+            await ctx.author.send(invitelink)
+        except Exception as e:
+            await ctx.author.send(f'Something went wrong {e} \n{type(e)}')
 # -----------------------------------------------------------------------------------------------------------
 async def setup(bot: commands.Bot):
     await bot.add_cog(cmds(bot))

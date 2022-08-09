@@ -10,7 +10,6 @@ class Viola(commands.Bot):
         self.bd = MongoDB()
         print('-------------------------------------------')
         print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] [Viola/INFO]: Connected to database successfully.')
-        self._lavalinkmode = 'lemehost'
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
     
     @property
