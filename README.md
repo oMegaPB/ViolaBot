@@ -2,7 +2,7 @@
     <img src="https://img.shields.io/tokei/lines/github/oMegaPB/ViolaBot?color=green&label=Lines%20of%20code&logo=github&logoColor=green", alt="LinesofCode">
 </a>
 <a href="https://github.com/oMegaPB/ViolaBot">
-    <img src="https://shields.io/github/repo-size/oMegaPB/ViolaBot?color=green&label=Lines%20of%20code&logo=github&logoColor=green", alt="LinesofCode">
+    <img src="https://shields.io/github/repo-size/oMegaPB/ViolaBot?color=green&label=Size&logo=github&logoColor=green", alt="LinesofCode">
 </a>
 
 ___
