@@ -7,5 +7,5 @@ pymongo==4.2.0
 dnspython==2.2.1
 youtube-transcript-api==0.4.4
 lavalink==3.1.7
-bottle==0.12.19
+bottle==0.12.20
 beautifulsoup4==4.11.1
