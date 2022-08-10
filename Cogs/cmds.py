@@ -1,6 +1,6 @@
-import discord, requests, json, datetime, os, asyncio, random, traceback, io
+import discord, requests, json, datetime, os, asyncio, random, traceback, io, magic
 from discord.ext import commands
-from Config.utils import YT, Recognizer
+from Config.utils import YT, ACRcloud
 from typing import List
 from discord.ext.commands import has_permissions
 from Config.components import Reactions, SetInfo, Logs, embedButtons, TicketButtons
@@ -13,23 +13,49 @@ class cmds(commands.Cog):
     @commands.command()
     async def recognize(self, ctx: commands.Context):
         async with ctx.channel.typing():
+            embed=ViolaEmbed(ctx=ctx, format='warning')
+            embed.description = 'Ожидайте...'
+            mess = await ctx.channel.send(embed=embed)
             if len(ctx.message.attachments) > 1:
                 await ctx.message.reply('`Вы можете прикрепить только один файл.`')
                 return
             elif len(ctx.message.attachments) == 0:
                 await ctx.message.reply('`Прикрепите хотя бы один файл.`')
                 return
-            with io.BytesIO(await ctx.message.attachments[0].read()) as audio_data:
-                print(len(audio_data.read()))
+            a = await ctx.message.attachments[0].read()
+            with io.BytesIO(a) as audio_data:
+                accepted = ['Audio file with ID3', 'Ogg data', 'WAVE audio', 'empty']
+                typo = magic.from_buffer(audio_data.read())
+                if not (accepted[0] in typo or accepted[1] in typo or accepted[2] in typo or accepted[3] in typo):
+                    embed = ViolaEmbed(ctx=ctx, format='error')
+                    embed.description = f'`Формат файла не поддерживается.`\n`(**{typo}**)`\n`Поддерживаемые файлы: .ogg .wav .mp3`'
+                    try:
+                        await mess.edit(embed=embed)
+                    except discord.errors.NotFound:
+                        await ctx.channel.send(embed=embed)
+                    return
+            with io.BytesIO(a) as audio_data:
                 try:
-                    song = await Recognizer.recognize_API(audio_data)
+                    song = await ACRcloud().recognize(audio_bytes=audio_data.read(2**20))
+                    if not song:
+                        embed = ViolaEmbed(ctx=ctx, format='error')
+                        embed.description = '`Совпадений для выбранного фрагмента не найдено.`'
+                        try:
+                            await mess.edit(embed=embed)
+                        except discord.errors.NotFound:
+                            await ctx.channel.send(embed=embed)
+                        return
                     yt = await YT.getYT(f'{song.title} - {song.author}')
                     embed = ViolaEmbed(ctx=ctx)
                     embed.set_thumbnail(url=song.thumbnail_url)
                     description = f'`Найдено совпадение:`\n`Название:` **{song.title}**\n`Исполнитель:` **{song.author}**'
                     description += f'\n\n**YT search:**\n`Ссылка на видео:` [{yt.title}](https://www.youtube.com/watch?v={yt.identifier})\n`Ссылка на канал:` [{yt.author}]({yt.author_url})\n`Длительность:` {yt.duration}\n`Просмотры:` {yt.view_count}'
                     embed.description = description
-                    await ctx.channel.send(embed=embed)
+                    try:
+                        await mess.edit(embed=embed)
+                    except discord.errors.NotFound:
+                        await ctx.channel.send(embed=embed)
+                    return
                 except Exception as e:
                     if isinstance(e, KeyError):
                         try:
