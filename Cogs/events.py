@@ -4,7 +4,7 @@ from typing import List, Dict, AsyncIterator
 from discord.ext.commands.errors import CommandNotFound, MemberNotFound
 from discord.ext.commands import has_permissions, MissingPermissions, MissingRequiredArgument, CommandInvokeError
 from Config.components import TicketButtons, TicketClose
-from Config.core import Viola
+from Config.core import Viola, CommandDisabled
 
 class events(commands.Cog):
     def __init__(self, bot: Viola):
@@ -31,26 +31,27 @@ class events(commands.Cog):
             if channel is not None:
                 embed = discord.Embed(color=discord.Color.green())
                 embed.set_author(name='Tickets.', icon_url='https://w7.pngwing.com/pngs/680/355/png-transparent-icon-e-mail-e-mail-mail.png')
-                embed.description = '`Чтобы создать тикет или жалобу`\n`Нажмите на кнопку ниже.`'
+                embed.description = '`Чтобы создать тикет нажмите на кнопку ниже.`'
                 try:
                     embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{channel.guild.icon.url}')
                 except Exception:
                     embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
                 async for message in channel.history(limit=1, oldest_first=True):
                     try:
-                        await message.edit(embed=embed, view=TicketButtons())
+                        await message.edit(content='', embed=embed, view=TicketButtons())
+                    except (discord.errors.Forbidden, Exception):
+                        pass
+        all = await self.bot.bd.rows(mode='list', category='ticketusers')
+        try:
+            for i in all.value:
+                channel = self.bot.get_channel(i['channelid'])
+                async for message in channel.history(limit=1, oldest_first=True):
+                    try:
+                        await message.edit(view=TicketClose())
                     except discord.errors.Forbidden:
                         pass
-            category = self.bot.get_channel(int(i['catid']))
-            if category is not None:
-                for k in category.text_channels:
-                    channel = self.bot.get_channel(k.id)
-                    async for message in channel.history(limit=10, oldest_first=True):
-                        if message.content == '>>> Тикет был успешно создан.' or message.content =='>>> Жалоба была успешно создана.':
-                            try:
-                                await message.edit(view=TicketClose())
-                            except discord.errors.Forbidden:
-                                pass
+        except BaseException as e:
+            pass
     
     @tasks.loop(seconds=250)
     async def update_VoiceChannel_members(self):
@@ -157,7 +158,7 @@ class events(commands.Cog):
                 await asyncio.sleep(1)
         except Exception:
             pass
-
+    
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.member.VoiceState, after: discord.member.VoiceState):
         # <AuditLogEntry id=998929831263731784 action=AuditLogAction.member_disconnect user=<Member id=728165963480170567 name='MegaWatt_' discriminator='1114' bot=False nick=None guild=<Guild id=742394556405907457 name="Viola's house" shard_id=0 chunked=True member_count=13>>>
@@ -208,7 +209,6 @@ class events(commands.Cog):
     @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error):
         if isinstance(error, CommandNotFound):
-            # await ctx.send("`Неизвестная команда. Используйте s!help Для списка команд.`")
             return
         elif isinstance(error, MissingPermissions):
             await ctx.channel.send(embed=discord.Embed(title='Ошибка', description=f'`Вам не хватает прав для данного действия.`\n`Вам нужны права:` **{error.missing_permissions[0]}**', color=discord.Color.red()))
@@ -219,7 +219,7 @@ class events(commands.Cog):
             embed.title = 'Ошибка.'
             embed.description = 'Участник не найден.'
             await ctx.message.reply(embed=embed)
-        elif isinstance(error, commands.CommandError):
+        elif isinstance(error, CommandDisabled):
             await ctx.message.reply(error)
         else:
             raise error
@@ -280,7 +280,7 @@ class events(commands.Cog):
                 old = False
                 a = round(entry.created_at.timestamp())
                 b = round(datetime.datetime.utcnow().timestamp())
-                if b - a > 25:
+                if b - a > 10:
                     old = True
                 if not int(message.channel.id) == channel.id and int(value['guildid']) == message.guild.id:
                     if message.attachments:

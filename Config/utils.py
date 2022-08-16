@@ -1,11 +1,12 @@
-import requests, json, asyncio, time, base64, os
+import requests, json, asyncio, time, base64, os, discord
+from discord.ext import commands
+from typing import List
 from typing import Union
 from dataclasses import dataclass,field
 from bs4 import BeautifulSoup
 from urllib.parse import quote
 from hashlib import sha1
 from hmac import new as hmac_new
-from io import BytesIO, TextIOWrapper
 
 @dataclass
 class YTVideo:
@@ -16,6 +17,7 @@ class YTVideo:
     author_url: str
     duration: str
     view_count: str
+
 @dataclass
 class Song:
     title: str
@@ -50,17 +52,22 @@ class YT:
             url = "https://www.youtube.com" + data["videoRenderer"]["longBylineText"]["runs"][0]["navigationEndpoint"]["commandMetadata"]["webCommandMetadata"]["url"]
             duration = data["videoRenderer"]["lengthText"]["simpleText"]
             views = str(repr(data["videoRenderer"]["viewCountText"]["simpleText"]).replace(' просмотров', '').replace('xa0', '').replace('\\', '').replace("'", '').replace(' просмотра', '').replace(' просмотр', '').replace(' views', ''))
-            views = ('{:,}'.format(int(views)))
+            try:
+                views = ('{:,}'.format(int(views)))
+            except Exception as e:
+                views = views
             return YTVideo(ident, thumb, title, author, url, duration, views)
         except TypeError:
             return data
+
 class HerokuRecognizer:
-    async def get_shazam_data(music_bytes: bytes) -> str:
+    def get_shazam_data(music_bytes: bytes) -> str:
         r = requests.post("https://nameless-sierra-10297.herokuapp.com/api/v1", files={"b_data": music_bytes})
         if r.status_code == 200:
             return r.text
         else:
             raise Exception(f"API status code {r.status_code}")
+    
     async def recognize_API(music_bytes: bytes) -> Song:
         shazam_data = await HerokuRecognizer.get_shazam_data(music_bytes)
         song_data = json.loads(shazam_data)["data"]
@@ -72,8 +79,7 @@ class HerokuRecognizer:
 
 class ACRcloud:
     def __init__(self):
-        data = '7c19864d9fe6b40ad4c0b1d29985bc6e:QejhENR15m68DS35n8vYz91f3GpR8tjq5X68yL58'.split(':')
-        # data = os.environ.get('ARCLOUD').split(':')
+        data = os.environ.get('ARCLOUD').split(':')
         self.key = data[0]
         self.secret = data[1].encode()
     async def recognize(self, audio_bytes: bytes) -> Union[Song, bool]:
@@ -92,6 +98,7 @@ class ACRcloud:
             "timeout": 10
         }
         result = requests.post(f'http://identify-eu-west-1.acrcloud.com/v1/identify', data).json()
+        print(result)
         if result["status"]['msg'] == 'Success':
             try:
                 title = result['metadata']['music'][0]['title'].encode('l1').decode('utf-8')
@@ -108,5 +115,86 @@ class ACRcloud:
             shazam = 'https://www.shazam.com/ru'
             return Song(title, author, thumbnail, shazam)
         return False
-# loop = asyncio.get_event_loop()
-# print(loop.run_until_complete(YT.getYT('imagine dragons')))
+# ----------------------------------------------------------------------------------
+class embedButtons(discord.ui.View):
+    def __init__(self, *, timeout=60.0, embeds: List[discord.Embed], ctx: commands.Context, bot: commands.Bot):
+        super().__init__(timeout=timeout)
+        self.embeds = embeds
+        self.count = 0
+        self.ctx = ctx
+        self.bot = bot
+        if len(self.embeds) < 2:
+            raise ValueError('You must have at least 2 embeds here.')
+        for i, embed in enumerate(self.embeds):
+            try:
+                embed.set_footer(text=f'{ctx.guild.name} Страница {i+1}/{len(embeds)}', icon_url=f'{ctx.guild.icon.url}')
+            except Exception:
+                embed.set_footer(text=f'{ctx.guild.name} Страница {i+1}/{len(embeds)}', icon_url=f'{self.bot.user.avatar.url}')
+    @discord.ui.button(label="⏮️", style=discord.ButtonStyle.gray, disabled=True)
+    async def prevfive(self, interaction:discord.Interaction, button: discord.ui.Button):
+        self.count = 0
+        button.disabled = True
+        x: discord.ui.Button
+        for x in self.children:
+            if x.label == '⏪':
+                if not x.disabled:
+                    x.disabled = True
+            elif x.label == '⏩' or x.label == '⏭️':
+                if x.disabled:
+                    x.disabled = False
+        await interaction.message.edit(embed=self.embeds[self.count], view=self)
+        await interaction.response.defer()
+    @discord.ui.button(label="⏪", style=discord.ButtonStyle.gray, disabled=True)
+    async def previous(self, interaction:discord.Interaction, button: discord.ui.Button):
+        self.count -= 1
+        if self.count == 0:
+            button.disabled = True
+            for x in self.children:
+                if x.label == '⏮️':
+                    if not x.disabled:
+                        x.disabled = True
+        x: discord.ui.Button
+        for x in self.children:
+            if x.label == '⏩' or x.label == '⏭️':
+                if x.disabled:
+                    x.disabled = False
+        await interaction.message.edit(embed=self.embeds[self.count], view=self)
+        await interaction.response.defer()
+    @discord.ui.button(label="⏩", style=discord.ButtonStyle.gray)
+    async def next(self, interaction:discord.Interaction, button: discord.ui.Button):
+        self.count += 1
+        if self.count + 1 == len(self.embeds):
+            button.disabled = True
+            for x in self.children:
+                if x.label == '⏭️':
+                    if not x.disabled:
+                        x.disabled = True
+        x: discord.ui.Button
+        for x in self.children:
+            if x.label == '⏪' or x.label == '⏮️':
+                if x.disabled:
+                    x.disabled = False
+        await interaction.message.edit(embed=self.embeds[self.count], view=self)
+        await interaction.response.defer()
+    @discord.ui.button(label="⏭️", style=discord.ButtonStyle.gray)
+    async def nextfive(self, interaction:discord.Interaction, button: discord.ui.Button):
+        self.count = len(self.embeds) - 1
+        button.disabled = True
+        x: discord.ui.Button
+        for x in self.children:
+            if x.label == '⏩':
+                if not x.disabled:
+                    x.disabled = True
+            elif x.label == '⏪' or x.label == '⏮️':
+                if x.disabled:
+                    x.disabled = False
+        await interaction.message.edit(embed=self.embeds[self.count], view=self)
+        await interaction.response.defer()
+    async def interaction_check(self, interaction: discord.Interaction):
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message(embed=discord.Embed(title='Ошибка.', description=f'<@!{interaction.user.id}>\nВы не можете взаимодействовать с этим сообщением, т.к его вызвал другой человек.', color=discord.Color.red()), ephemeral=True)
+            return False
+        return True
+    @discord.ui.button(label="❌", style=discord.ButtonStyle.red)
+    async def close(self, interaction:discord.Interaction, button: discord.ui.Button):
+        await interaction.message.delete()

@@ -1,8 +1,8 @@
 import discord, lavalink, asyncio, aiohttp
 import datetime, typing
 from discord.ext import commands
-from datetime import datetime as dt, timedelta
-from Config.assets.newdb import MongoDB
+from Config.utils import embedButtons
+from Config.assets.database import MongoDB
 
 class Viola(commands.Bot):
     def __init__(self, **kwargs):
@@ -11,14 +11,6 @@ class Viola(commands.Bot):
         print('-------------------------------------------')
         print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] [Viola/INFO]: Connected to database successfully.')
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
-    
-    @property
-    def lavalinkmode(self) -> str:
-        return self._lavalinkmode
-    
-    @lavalinkmode.setter
-    def lavalinkmode(self, value: str) -> None:
-        self._lavalinkmode = value
     
     async def sync(self) -> None:
         # guild = discord.Object(id=1000466637478178910)
@@ -33,31 +25,12 @@ class Viola(commands.Bot):
             return channel
         return None  
     
-    def GetTime(self, seconds: int) -> str:
-        sec = timedelta(seconds=seconds)
-        d = dt(1,1,1) + sec
-        if int(d.second) < 10:
-            second = '0' + str(d.second)
-        else: second = d.second
-        if int(d.minute) < 10:
-            minute = '0' + str(d.minute)
-        else: minute = d.minute
-        if int(d.hour) < 10:
-            hour = '0' + str(d.hour)
-        else: hour = d.hour
-        if int(d.day-1) < 10:
-            day = '0' + str(d.day - 1)
-        else: day = d.day
-        if d.day-1 != 0:
-            res = "{}:{}:{}:{}".format(day-1, hour, minute, second).replace('00', '0')
-        else:
-            if d.hour != 0:
-                res = "{}:{}:{}".format(hour, minute, second).replace('00', '0')
-            else:
-                res = "{}:{}".format(minute, second).replace('00', '0')
-        if res[-2:] == ':0':
-            res += "0"
-        return res   
+    def GetTime(self, seconds: int):
+        m, s = divmod(int(seconds), 60)
+        h, m = divmod(m, 60)
+        if seconds >= 3600:
+            return f'{h:02d}:{m:02d}:{s:02d}'
+        return f'{m:02d}:{s:02d}'
     
     def GetLevel(self, amount: int) -> int:
         amount += 1
@@ -111,7 +84,7 @@ class ViolaEmbed(discord.Embed):
     def __init__(self, **kwargs):
         self.format = kwargs.pop('format') if 'format' in kwargs else 'success'
         self.ctx = kwargs.pop('ctx') if 'ctx' in kwargs else None
-        if not isinstance(self.ctx, commands.Context) and not self.ctx is None:
+        if not isinstance(self.ctx, commands.Context) and self.ctx is not None:
             raise discord.errors.ClientException('ctx not context')
         super().__init__(**kwargs)
         if self.ctx:
@@ -119,16 +92,66 @@ class ViolaEmbed(discord.Embed):
                 self.set_footer(text=f'{self.ctx.guild.name}', icon_url=f'{self.ctx.guild.icon.url}')
             except Exception:
                 self.set_footer(text=f'{self.ctx.guild.name}', icon_url=f'{self.ctx.me.avatar.url}')
-        if self.format != None:
-            colors = {'success': discord.Color.green(), 'warning': discord.Color.yellow(), 'error': discord.Color.red()}
-            titles = {'success': 'Успешно.', 'warning': 'Внимание.', 'error': 'Ошибка.'}
-            urls = {
-                'success': 'https://cdn.discordapp.com/emojis/1006317088253681734.webp',
-                'warning': 'https://cdn.discordapp.com/emojis/1006317089683951718.webp',
-                'error': 'https://cdn.discordapp.com/emojis/1006317086471094302.webp'
-            }
-            self.set_author(icon_url=urls[self.format], name=titles[self.format])
-            self.color = colors[self.format]
+            try:
+                self.set_thumbnail(url=f'{self.ctx.guild.icon.url}')
+            except Exception:
+                self.set_thumbnail(url=f'https://i.ytimg.com/vi/onTNE293NR0/hqdefault.jpg')
+        colors = {'success': discord.Color.green(), 'warning': discord.Color.yellow(), 'error': discord.Color.red()}
+        titles = {'success': 'Успешно.', 'warning': 'Внимание.', 'error': 'Ошибка.'}
+        urls = {
+            'success': 'https://cdn.discordapp.com/emojis/1006317088253681734.webp',
+            'warning': 'https://cdn.discordapp.com/emojis/1006317089683951718.webp',
+            'error': 'https://cdn.discordapp.com/emojis/1006317086471094302.webp'
+        }
+        self.set_author(icon_url=urls[self.format], name=titles[self.format])
+        self.color = colors[self.format]
+
+class CommandDisabled(commands.CommandError):
+    """
+    Exception that being raised while user running disabled command
+    
+    """
+    pass
+
+class ViolaHelp(commands.HelpCommand):
+    def __init__(self):
+        super().__init__()
+    
+    async def send_bot_help(self, mapping: dict):
+        embeds = []
+        for i, j in enumerate(mapping.keys()):
+            try:
+                if j.__cog_name__ == 'events':
+                    continue
+            except AttributeError:
+                pass
+            j: commands.Cog
+            x: commands.Command
+            embed = ViolaEmbed(ctx=self.context)
+            title = j.__cog_name__ if j is not None else 'Команды администрации.'
+            title += '\n' + j.__cog_description__ if j is not None else ''
+            embed.title = title
+            description = ''
+            for x in mapping[j]:
+                description += f'**{x.name}**\n'
+            embed.description = description
+            embeds.append(embed)
+        await self.context.channel.send(embed=embeds[0], view=embedButtons(embeds=embeds, ctx=self.context, bot=self.context.bot))
+       
+    async def send_command_help(self, command: commands.Command):
+        embed = ViolaEmbed(ctx=self.context)
+        embed.title = f'Команда {command.name}'
+        embed.description = command.description
+        await self.context.send(embed=embed)
+      
+    async def send_group_help(self, group):
+        await self.context.send("This is help group")
+    
+    async def send_cog_help(self, cog):
+        await self.context.send("This is help cog")
+    
+    async def command_not_found(self, command):
+        return f'Команда {command} не найдена.'
 
 class LavalinkVoiceClient(discord.VoiceClient):
     def __init__(self, client: Viola, channel: discord.abc.Connectable):

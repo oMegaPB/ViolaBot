@@ -15,20 +15,13 @@ class Music(commands.Cog):
         self.bot = bot
         self.player = None
         self.bot.loop.create_task(self.genseconds())
-        self.bot.loop.create_task(self.helper())
+        self.bot.loop.create_task(self.some_shit())
         self.bot.loop.create_task(self.connectnodes())
         lavalink.add_event_hook(self.track_hook)
     async def connectnodes(self):
-        # ws = await self.bot.session.ws_connect('ws://{}:{}'.format('23.88.73.88', 11928), headers={'authorization': 'youshallnotpass'},heartbeat=60)
-        # print(ws)
-        # await ws.close()
         if not hasattr(self.bot, 'lavalink'):
             self.bot.lavalink = lavalink.Client(self.bot.user.id)
-            # ----------------------------------------------------------------------------------------
-            data = [['lavalink6.herokuapp.com', 80, 'lavalinkVI'], ['192.168.56.1', 8080, 'test'], ['23.88.73.88', 11928, 'youshallnotpass'], ['lava-ny-01.thermalhosting.com', 4018, 'thermalhosting.com']]
-            for host, port, password in data:
-                if host == 'lavalink6.herokuapp.com':
-                    self.bot.lavalink.node_manager.add_node(host=host, port=port, password=password, region='eu', resume_key='default-node', resume_timeout=60, name=None, reconnect_attempts=3)
+        # self.bot.lavalink.node_manager.add_node(host='192.168.56.1', port=8080, password='test', region='eu', resume_key='default-node', resume_timeout=60, name=None, reconnect_attempts=3)
     async def genseconds(self):
         while True:
             try:
@@ -37,7 +30,7 @@ class Music(commands.Cog):
                 await asyncio.sleep(1)
             except AttributeError:
                 await asyncio.sleep(1)
-    async def helper(self):
+    async def some_shit(self):
         while True:
             self.ed = False
             await asyncio.sleep(7)
@@ -132,6 +125,8 @@ class Music(commands.Cog):
     
     @commands.command(aliases=['p'])
     async def play(self, ctx: commands.Context, *, Трек):
+        await ctx.channel.send('`Музыка временно отключена.`')
+        return
         query: str = Трек
         async with ctx.message.channel.typing():
             playing = False

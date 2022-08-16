@@ -1,16 +1,18 @@
-import discord, requests, json, datetime, os, asyncio, random, traceback, io, magic
+import discord, requests, json, datetime, os, asyncio, random, traceback, io, magic, re
 from discord.ext import commands
 from Config.utils import YT, ACRcloud
 from typing import List
 from discord.ext.commands import has_permissions
-from Config.components import Reactions, SetInfo, Logs, embedButtons, TicketButtons
+from Config.components import Reactions, SetInfo, Logs, TicketButtons
+from Config.utils import embedButtons
 from discord import app_commands
 from Config.core import Viola, ViolaEmbed
 # -----------------------------------------------------------------------------------------------------------
-class cmds(commands.Cog):
+class cmds(commands.Cog, description='**Основные команды бота.**'):
     def __init__(self, bot: Viola):
         self.bot = bot
-    @commands.command()
+    
+    @commands.command(description="Прикрепите отрывок песни или целую песню, введите эту команду и бот попытается угадать ее название, исполнителя и показать ютуб статистику.")
     async def recognize(self, ctx: commands.Context):
         async with ctx.channel.typing():
             embed=ViolaEmbed(ctx=ctx, format='warning')
@@ -24,11 +26,11 @@ class cmds(commands.Cog):
                 return
             a = await ctx.message.attachments[0].read()
             with io.BytesIO(a) as audio_data:
-                accepted = ['Audio file with ID3', 'Ogg data', 'WAVE audio', 'empty']
+                accepted = ['Audio file with ID3', 'Ogg data', 'WAVE audio']
                 typo = magic.from_buffer(audio_data.read())
                 if not (accepted[0] in typo or accepted[1] in typo or accepted[2] in typo or accepted[3] in typo):
                     embed = ViolaEmbed(ctx=ctx, format='error')
-                    embed.description = f'`Формат файла не поддерживается.`\n`(**{typo}**)`\n`Поддерживаемые файлы: .ogg .wav .mp3`'
+                    embed.description = f'`Формат файла не поддерживается.`\n(**{typo}**)\n`Поддерживаемые файлы: .ogg .wav .mp3`'
                     try:
                         await mess.edit(embed=embed)
                     except discord.errors.NotFound:
@@ -67,12 +69,65 @@ class cmds(commands.Cog):
                             await ctx.message.reply(f'`{e}\n{type(e)}`')
                         except discord.errors.NotFound:
                             await ctx.channel.send(f'`{e}\n{type(e)}`')
-
-    @commands.command()
+    
+    @commands.command(description="Вспомогательная утилита.\nУдаляет дискорд вебхуки.\nПример: `s!webhookdel https://discord.com/api/webhooks/\n1007626877843812362/j_O-_9JiaC7JTiAquW15\nvZb8PaO0mLlujEplsgwVnM3710O\nUBEePhToo1c-UJVcnvpcV`")
+    async def webhookdel(self, ctx: commands.Context, url):
+        m = re.search(r'discord(?:app)?.com/api/webhooks/(?P<id>[0-9]{17,20})/(?P<token>[A-Za-z0-9\.\-\_]{60,68})', url)
+        if m is None:
+            await ctx.message.reply('`Укажите достоверный url вебхука.`')
+            return
+        async with self.bot.session.delete(url) as response:
+            await ctx.message.reply(f'`Действие выполнено со статусом` **{response.status}**')
+    
+    @commands.command(description="Команда.\nУзнайте топ сервера по голосовой активности и по опыту.\nПример: `s!top voice` топ сервера по голосу.")
     async def top(self, ctx: commands.Context, *category):
         if not category:
+            # embeds = [discord.Embed(color=discord.Color.red(), description='1'), discord.Embed(color=discord.Color.green(), description='2'), discord.Embed(color=discord.Color.blurple(), description='3')]
+            embeds: List[discord.Embed] = []
+            try:
+                buffer = []
+                res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, mode='all', category='messages')
+                for x in res.value:
+                    buffer.append({'memberid': x['memberid'], 'amount': x['amount']})
+                buffer = sorted(buffer, key = lambda x: x['amount'])
+                buffer = buffer[::-1]
+                embed = discord.Embed(color=discord.Color.green())
+                embed.title = f'Топ сервера {ctx.guild.name} по сообщениям.✍️'
+                description = ''
+                count = 0
+                # --------------------------
+                for i in buffer:
+                    count += 1
+                    if count % 6 == 0:
+                        embed.description = description
+                        embeds.append(embed)
+                        embed = discord.Embed(color=discord.Color.green())
+                        embed.title = f'Топ сервера {ctx.guild.name} по сообщениям.✍️'
+                        embed.description = ''
+                        description = ''
+                    try:
+                        member = ctx.guild.get_member(int(i['memberid']))
+                    except:
+                        member = None
+                        member = self.bot.get_user(int(i['memberid']))
+                        try:
+                            memberi = f'{member.name}#{member.discriminator} (Вышел)'
+                        except AttributeError:
+                            memberi = f'<@!{int(i["memberid"])}> (Вышел)'
+                        level = self.bot.GetLevel(i['amount'])
+                        description += f'**#{count}.** `{memberi}`\n`Уровень:` **{level[0]}** | `Опыт:` **({i["amount"]*3}/{level[1]*3})**\n\n'
+                        continue
+                    level = self.bot.GetLevel(i['amount'])
+                    description += f'**#{count}.** **{member.nick if member.nick else member.name}**\n`Уровень:` **{level[0]}** | `Опыт:` **({i["amount"]*3}/{level[1]*3})**\n\n'
+                embed.description = description
+                embeds.append(embed)
+                if len(embeds) > 1:
+                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0], view=embedButtons(embeds=embeds, ctx=ctx, bot=self.bot))
+                else:
+                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0])
+            except Exception:
+                print(traceback.format_exc())
             return
-        # embeds = [discord.Embed(color=discord.Color.red(), description='1'), discord.Embed(color=discord.Color.green(), description='2'), discord.Embed(color=discord.Color.blurple(), description='3')]
         if category[0] == 'voice':
             embeds: List[discord.Embed] = []
             try:
@@ -88,14 +143,13 @@ class cmds(commands.Cog):
                 count = 0
                 # --------------------------
                 buffer2 = []
-                used = []
                 res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, mode='all', category='messages')
                 if res.status:
                     for x in res.value:
                         buffer2.append({'memberid': x['memberid'], 'amount': x['amount']})
                 # --------------------------
                 for i in buffer:
-                    if i in used:
+                    if int(i['amount']) == 0:
                         continue
                     count += 1
                     if count % 6 == 0:
@@ -111,7 +165,10 @@ class cmds(commands.Cog):
                         member = None
                     if member is None:
                         member = self.bot.get_user(int(i['memberid']))
-                        memberi = f'{member.name}#{member.discriminator} (Вышел)'
+                        try:
+                            memberi = f'{member.name}#{member.discriminator} (Вышел)'
+                        except AttributeError:
+                            memberi = f'<@!{int(i["memberid"])}> (Вышел)'
                         description += f'**#{count}.** `{memberi}`\n`Время:` **{self.bot.GetTime(i["amount"])}**\n'
                         done = False
                         for y in buffer2:
@@ -139,18 +196,21 @@ class cmds(commands.Cog):
                     except Exception:
                         embed.set_footer(text=f'{ctx.guild.name} Страница {i+1}/{len(embeds)}', icon_url=f'{self.bot.user.avatar.url}')
                 if len(embeds) > 1:
-                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0], view=embedButtons(embeds=embeds, ctx=ctx))
+                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0], view=embedButtons(embeds=embeds, ctx=ctx, bot=self.bot))
                 else:
                     await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0])
             except Exception:
                 print(traceback.format_exc())
 
-    @commands.command()
+    @commands.command(description='Утилита.\nОтслеживайте изменённые/удаленные сообщения, отключения из голосовых каналов и другие события сервера.')
     @has_permissions(administrator=True)
     async def logs(self, ctx: commands.Context):
-        await ctx.send('>>> Логирование\nВыберите действие.', view=Logs(bot=self.bot, ctx=ctx))
+        embed = ViolaEmbed(ctx=ctx)
+        embed.title = 'Система логирования'
+        embed.description = '`Выберите дествие:`'
+        await ctx.send(embed=embed, view=Logs(bot=self.bot, ctx=ctx))
     
-    @commands.command()
+    @commands.command(description='Благодаря этой команде вы можете вступить в брак с кем нибудь!\nПример: `s!marry @партнер`')
     async def marry(self, ctx: commands.Context, member: discord.Member = None):
         if member is None:
             await ctx.message.reply('`Вам необходимо указать цель.`')
@@ -161,9 +221,9 @@ class cmds(commands.Cog):
         if member == ctx.author:
             await ctx.message.reply('`Попробуйте жениться на ком нибудь другом.`')
             return
-        res = await self.bot.bd.fetch({'memberid': ctx.author.id}, category='marry')
+        res = await self.bot.bd.fetch({'memberid': ctx.author.id, 'guildid': ctx.author.id}, category='marry')
         if not res.status:
-            res = await self.bot.bd.fetch({'partnerid': ctx.author.id}, category='marry')
+            res = await self.bot.bd.fetch({'partnerid': ctx.author.id, 'guildid': ctx.author.id}, category='marry')
             if res.status:
                 await ctx.channel.send('`Вы уже женаты/замужем.`')
                 return
@@ -216,9 +276,9 @@ class cmds(commands.Cog):
             await ctx.channel.send(embed=embed)
             await mess.clear_reactions()
         elif reaction.emoji == '✅':
-            res = await self.bot.bd.fetch({'memberid': ctx.author.id}, category='marry')
+            res = await self.bot.bd.fetch({'memberid': ctx.author.id, 'guildid': ctx.author.id}, category='marry')
             if not res.status:
-                res = await self.bot.bd.fetch({'partnerid': ctx.author.id}, category='marry')
+                res = await self.bot.bd.fetch({'partnerid': ctx.author.id, 'guildid': ctx.author.id}, category='marry')
                 if res.status:
                     await ctx.channel.send('`Вы уже женаты/замужем.`')
                     return
@@ -239,7 +299,7 @@ class cmds(commands.Cog):
             except discord.errors.NotFound:
                 pass
     
-    @commands.command()
+    @commands.command(description='Если вам надоела ваша вторая половинка, вы можете развестись с ней.')
     async def divorce(self, ctx: commands.Context):
         res = await self.bot.bd.fetch({'guildid': ctx.guild.id, 'partnerid': ctx.author.id}, category='marry')
         if not res.status:
@@ -292,7 +352,7 @@ class cmds(commands.Cog):
             args = {'main': member.id, 'partner': res.value['partnerid'], 'date': res.value['date']}
             return args
     
-    @commands.command()
+    @commands.command(description="Вспомогательная команда.\nБлагодаря этой команде вы можете обнулить уровень любого человека.")
     @has_permissions(administrator=True)
     async def resetlevel(self, ctx: commands.Context, member: discord.Member = None):
         if ctx.message.reference:
@@ -334,7 +394,7 @@ class cmds(commands.Cog):
             embed.description = f'{member.mention} имеет нулевую статистику на сервере.'
             mess = await ctx.channel.send(embed=embed)
     
-    @commands.command(aliases=['user-info'])
+    @commands.command(aliases=['user-info'], description='Утилита.\nС помощью этой команды вы можете посмотреть подробную информацию об участнике сервера.')
     async def user(self, ctx: commands.Context, member: discord.Member=None):
         async with ctx.channel.typing():
             if ctx.message.reference:
@@ -446,12 +506,14 @@ class cmds(commands.Cog):
                 embed.set_footer(text=f'{member.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
             await ctx.channel.send(embed=embed)
 
-    @commands.command()
+    @commands.command(description="Утилита.\nРасскажите о себе. Эта информация появится на вашем профиле на сервере.")
     async def setinfo(self, ctx: commands.Context):
         async with ctx.channel.typing():
-            await ctx.channel.send('>>> Выберите действие,\nкоторое вам нужно:', view=SetInfo(ctx=ctx))
+            embed = ViolaEmbed(ctx=ctx)
+            embed.description = '>>> Выберите действие,\nкоторое вам нужно:'
+            await ctx.channel.send(embed=embed, view=SetInfo(ctx=ctx))
     
-    @commands.command()
+    @commands.command(description="Отключает команду на этом сервере. Пример: `s!disable marry`\n(с отключенными командами нельзя взаимодействовать.)")
     @has_permissions(administrator=True)
     async def disable(self, ctx: commands.Context, command):
         if command == 'disable' or command == 'enable':
@@ -466,7 +528,7 @@ class cmds(commands.Cog):
                     await self.bot.bd.add({'guildid': ctx.guild.id, 'commandname': str(x.name)}, category='disabledcmds')
                     await ctx.message.reply(f'`Команда {command} отключена.✅`\n`Используйте s!enable чтобы включить ее.`')
     
-    @commands.command()
+    @commands.command(description='Если команда была отключена, то включает ее назад. (с отключенными командами взаимодействовать нельзя)')
     @has_permissions(administrator=True)
     async def enable(self, ctx: commands.Context, command):
         for x in self.bot.commands:
@@ -478,29 +540,34 @@ class cmds(commands.Cog):
                     await self.bot.bd.remove({'guildid': ctx.guild.id, 'commandname': str(x.name)}, category='disabledcmds')
                     await ctx.message.reply(f'`Команда {command} включена обратно.✅`')
     
-    @commands.command(aliases = ['reactroles', 'reaction-roles', ])
+    @commands.command(aliases = ['reactroles', 'reaction-roles', ], description = 'Настройте Роли по реакциям просто следуя инструкциям. (вам понадобится id текстового канала и id сообщения.)')
     @has_permissions(administrator=True)
     async def reactions(self, ctx: commands.Context) -> None:
         async with ctx.channel.typing():
-            await ctx.channel.send('>>> Роли по реакции.\nВыберите нужную вам опцию:', view=Reactions(ctx=ctx))
+            embed = ViolaEmbed(ctx=ctx)
+            embed.description = '>>> Роли по реакции.\nВыберите нужную вам опцию:'
+            await ctx.channel.send(embed=embed, view=Reactions(ctx=ctx))
 
-    @app_commands.command()
+    @app_commands.command(description="Задержка бота в миллисекундах.")
     async def ping(self, interaction: discord.Interaction) -> None:
         ping1 = f"{str(round(self.bot.latency * 1000))} ms"
         embed = discord.Embed(title = "**Pong!**", description = "`" + ping1 + "`", color = 0xafdafc)
         await interaction.response.send_message(embed = embed)
 
-    @commands.command()
-    async def avatar(self, ctx: commands.Context, user: discord.User):
-        embed = ViolaEmbed(ctx=ctx, format=None)
-        embed.title = f'Аватар Пользователя {user}'
+    @commands.command(description = 'Утилита.\nУзнайте аватар любого пользователя.')
+    async def avatar(self, ctx: commands.Context, user: discord.User = None):
+        if user is None:
+            user = ctx.author
+        embed = ViolaEmbed(ctx=ctx)
+        embed.description = f'Аватар Пользователя **{user}**'
+        embed.set_thumbnail(url=None)
         try:
             embed.set_image(url=user.avatar.url)
             await ctx.send(embed = embed)
         except Exception:
             await ctx.message.reply('Нету аватара.')
     
-    @commands.command()
+    @commands.command(description="Поставьте свой префикс бота на этом сервере. \n(бот так же будет реагировать на свой основной префикс `s!`)")
     @has_permissions(administrator=True)
     async def setprefix(self, ctx: commands.Context, prefix):
         async def getprefix():
@@ -532,7 +599,7 @@ class cmds(commands.Cog):
             except discord.errors.NotFound:
                 return
 
-    @commands.command(aliases = ['vc-members', ])
+    @commands.command(aliases = ['member-stats', ], description = 'Утилита.\nПсевдоним: [member-stats]\n Укажите один из двух аргументов (remove/add) и id голосового канала чтобы знать сколько у вас участников на сервере. (Бот будет переименовывать голосовой канал.)')
     @has_permissions(administrator=True)
     async def member_count(self, ctx: commands.Context, *args):
         if args[0] == 'remove':
@@ -567,16 +634,9 @@ class cmds(commands.Cog):
                     return
             else:
                 await ctx.send(f'`Канал не найден.`')
-
-    @commands.command()
-    async def help(self, ctx: commands.Context):
-        com1 = '**Hypixel**:\n`s!link, s!unlink`\n`s!gtop, s!s`\n\n'
-        com2 = '**Команды**:\n`s!reply, s!vcm`\n`s!say, s!ship`\n`s!vc-members <remove>\ns!tickets <create/remove/perms>`\n `s!reaction-roles`\n`s!setprefix, s!ping`\n`s!play <название | url>`'
-        embed = discord.Embed(title="Help", description=com1+com2, color=discord.Color.green())
-        await ctx.send(embed=embed)
     
     @has_permissions(administrator=True)
-    @commands.command()
+    @commands.command(description="Очистка чата.\nПараметры: лимит и (опционально) пользователь.\nУдаляет (лимит) сообщений и если указан пользователь, то удаляет сообщения от конкретного пользователя.")
     async def purge(self, ctx: commands.Context, limit, *user):
         if not user:
             if int(limit) > 100:
@@ -591,7 +651,7 @@ class cmds(commands.Cog):
             deleted = await ctx.channel.purge(limit=int(limit), check=check)
             await ctx.channel.send(f'Удалено {len(deleted)} сообщений от пользователя <@!{member.id}>')
     
-    @commands.command()
+    @commands.command(description='Узнайте совместимость обсолютно любых двух вещей.\nПример: `s!ship Вася Петя`')
     async def ship(self, ctx: commands.Context, *args):
         if not args or len(args) != 2:
             await ctx.send('`s!ship <name1> <name2>`')
@@ -604,7 +664,9 @@ class cmds(commands.Cog):
         if len(name2) == 21:
             name2 = str(name2).replace('<@', '').replace('>', '')
             name2 = self.bot.get_user(int(name2)).name
-        shipname = name[:len(name)//2] + str(name2).replace(str(name2[:len(name2)//2]), '')
+        if str(name2[:len(name2)//2]) == str(name2[len(name2)//2:]):
+            temp1 = str(name2[:len(name2)//2])
+        shipname = name[:len(name)//2] + (str(name2).replace(str(name2[:len(name2)//2]), '') + temp1 if temp1 is not None else None)
         compatibility = random.randint(1, 99)
         string = list('▬▬▬▬▬▬▬▬▬▬')
         string[compatibility // 10] = ':heart:'
@@ -613,19 +675,19 @@ class cmds(commands.Cog):
         embed.color = discord.Color.random()
         await ctx.send(embed=embed)
 
-    async def d1(self, ctx: commands.Context):
-        await ctx.message.delete()
-    async def s2(self, ctx: commands.Context, content):
-        await ctx.send(' '.join(content))
-    @commands.command()
+    @commands.command(description='Скажите любое сообщение от имени бота.\nПример: `s!say hello`')
     async def say(self, ctx: commands.Context, *content):
+        async def d1(ctx: commands.Context):
+            await ctx.message.delete()
+        async def s2(ctx: commands.Context, content):
+            await ctx.send(' '.join(content))
         if not content:
             await ctx.message.delete()
             return
-        self.bot.loop.create_task(self.d1(ctx))
-        self.bot.loop.create_task(self.s2(ctx, content))
+        self.bot.loop.create_task(d1(ctx))
+        self.bot.loop.create_task(s2(ctx, content))
 
-    @commands.command(aliases = ['guilds', ])
+    @commands.command(aliases = ['guilds', ], description ='Этой командой может пользоваться только мой владелец.')
     async def leave(self, ctx: commands.Context, *guildid):
         if ctx.author.id == self.bot.owner_id:
             if not guildid:
@@ -645,9 +707,17 @@ class cmds(commands.Cog):
             except:
                 await ctx.send("`Что то пошло не так...`")
 
-    @commands.command()
+    @commands.command(description="Заглушает всех людей в голосовом канале. Если канал не указан то заглушает всех в голосовом канале автора команды.")
     @has_permissions(administrator=True)
     async def vcm(self, ctx: commands.Context, *channel):
+        if not channel:
+            try:
+                channel = ctx.author.voice.channel
+            except AttributeError:
+                embed = ViolaEmbed(ctx=ctx, format='error')
+                embed.description = '**Укажите канал для выполнения этого действия.**'
+                await ctx.channel.send(embed=embed)
+                return
         ids = [self.bot.owner_id]
         done = False
         if not channel:
@@ -670,21 +740,21 @@ class cmds(commands.Cog):
         except Exception:
             return
 
-    async def d1(self, ctx: commands.Context):
-        await ctx.message.delete()
-    async def r2(self, ctx: commands.Context, content, message: discord.Message):
-        await message.reply(content=' '.join(content))
-    @commands.command(aliases = ['r', ])
+    @commands.command(aliases = ['r', ], description ='Команда.\nПсевдонимы: `s!r <текст>`\nОтвечает от имени бота на сообщение другого пользователя.\n(Вам необходимо чтобы в сообщении с командой был ответ на то сообщение на которое вы хотите чтобы бот ответил.)')
     async def reply(self, ctx: commands.Context, *content):
+        async def d1(ctx: commands.Context):
+            await ctx.message.delete()
+        async def r2(ctx: commands.Context, content, message: discord.Message):
+            await message.reply(content=' '.join(content))
         if not ctx.message.reference:
             return
         ref = ctx.message.reference
         message = self.bot.get_channel(ref.channel_id).get_partial_message(ref.message_id)
-        self.bot.loop.create_task(self.d1(ctx))
-        self.bot.loop.create_task(self.r2(ctx, content, message))
-
-    @commands.command()
+        self.bot.loop.create_task(d1(ctx))
+        self.bot.loop.create_task(r2(ctx, content, message))
+    
     @has_permissions(administrator=True)
+    @commands.command(description="Утилита.\nСоздайте собственную систему тикетов.\nПринимает три параметра: create/remove/perms.\ncreate - создать\nremove - Удалить\nperms - Указать через пробел роли администрации.")
     async def tickets(self, ctx: commands.Context, *args):
         if args:
             if args[0] == 'remove':
@@ -717,12 +787,12 @@ class cmds(commands.Cog):
                         except Exception:
                             pass
                         try:
-                            await ctx.send(f'`Система жалоб удалена участником`<@!{ctx.author.id}>`!`')
+                            await ctx.send(f'Система жалоб удалена участником <@!{ctx.author.id}> !')
                             return
                         except discord.errors.NotFound:
                             return
                 else:
-                    embed = discord.Embed(description='`Система тикетов не найдена. s!tickets create`')
+                    embed = discord.Embed(description='`Система тикетов не найдена.`')
                     embed.color = 0x00ffff
                     await ctx.send(embed=embed)
             elif args[0] == 'create':
@@ -760,21 +830,26 @@ class cmds(commands.Cog):
                     await self.bot.bd.add({'guildid': ctx.guild.id, 'catid': category.id, 'channel_id': channel.id}, category='tickets')
                     embed = discord.Embed(color=discord.Color.green())
                     embed.set_author(name='Tickets.', icon_url='https://w7.pngwing.com/pngs/680/355/png-transparent-icon-e-mail-e-mail-mail.png')
-                    embed.description = '`Чтобы создать тикет или жалобу`\n`Нажмите на кнопку ниже.`'
+                    embed.description = '`Чтобы создать тикет нажмите на кнопку ниже.`'
                     try:
                         embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{channel.guild.icon.url}')
                     except Exception:
                         embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
-                    await channel.send(embed=embed, view=TicketButtons(bot=self.bot))
+                    await channel.send(embed=embed, view=TicketButtons())
                     await ctx.channel.send(f'`Система тикетов создана. Канал:`<#{channel.id}>')
             elif args[0] == 'perms':
                 lst = []
                 args = list(args)
                 args.remove('perms')
+                if len(args) == 0:
+                    embed = ViolaEmbed(ctx=ctx, format='error')
+                    embed.description = '**Укажите или упомяните хотя бы одну роль для выполнения этого действия.**'
+                    await ctx.channel.send(embed=embed)
+                    return
                 for i in args:
                     arg = str(i).replace('<@&', '').replace('>', '')
                     lst.append(int(arg))
-                await self.bot.bd.remove({'guildid': ctx.guild.id}, category='tickets')
+                await self.bot.bd.remove({'guildid': ctx.guild.id}, category='ticketsperms')
                 await self.bot.bd.add({'guildid': ctx.guild.id, 'roles': lst}, category='ticketsperms')
                 text = '**Роли Обновлены:**\n'
                 for i in lst:
@@ -786,17 +861,22 @@ class cmds(commands.Cog):
             embed = discord.Embed(title="Tickets", description="`<args: create/remove/perms>`", color=0x00ffff)
             await ctx.send(embed=embed)
 
-    @commands.command()
+    @commands.command(description="Эту команду может использовать только мой создатель.")
     async def invite(self, ctx: commands.Context, id):
-        if ctx.author.id != self.bot.owner_id:
-            return
-        try:
-            guild = self.bot.get_guild(int(id))
-            channel = guild.categories[0].channels[0]
-            invitelink = await channel.create_invite(max_uses=1)
-            await ctx.author.send(invitelink)
-        except Exception as e:
-            await ctx.author.send(f'Something went wrong {e} \n{type(e)}')
+        if ctx.author.id == self.bot.owner_id:
+            try:
+                guild = self.bot.get_guild(int(id))
+                channel = guild.categories[0].channels[0]
+                invitelink = await channel.create_invite(max_uses=1)
+                await ctx.author.send(invitelink)
+            except Exception as e:
+                await ctx.author.send(f'Something went wrong {e}\n{type(e)}')
+    
+    @commands.command(description='Утилита.\nНастройте Приватные голосовые комнаты.')
+    async def rooms(self, ctx: commands.Context):
+        embed = ViolaEmbed(ctx=ctx)
+        embed.description = '>>> Выберите одно из доступных действий:'
+        await ctx.channel.send(embed=embed)
 # -----------------------------------------------------------------------------------------------------------
 async def setup(bot: commands.Bot):
     await bot.add_cog(cmds(bot))

@@ -4,9 +4,8 @@ from discord.ext import commands
 from discord.ext.commands import has_permissions
 from discord.ext.commands.errors import ExtensionNotLoaded
 from aiohttp.client_exceptions import ClientConnectorError
-from Config.core import Viola
+from Config.core import Viola, CommandDisabled, ViolaHelp
 
-intents = discord.Intents().all()
 loop = asyncio.get_event_loop()
 
 async def guild_based_prefix(bot: Viola, message: discord.Message):
@@ -20,14 +19,16 @@ async def guild_based_prefix(bot: Viola, message: discord.Message):
 bot = Viola(
     case_insensitive=True,
     command_prefix=guild_based_prefix, 
-    intents=intents, 
+    intents=discord.Intents().all(), 
     owner_id=728165963480170567, 
     strip_after_prefix=True,
-    help_command=None, 
+    help_command=ViolaHelp(), 
     max_messages=5000,
     allowed_mentions=discord.AllowedMentions(everyone=False, replied_user=True, roles=False, users=True),
     activity=discord.Game(name="with discord api"),
-    application_id=924357517306380378 # 931873675454595102-beta, 924357517306380378-original
+    application_id=924357517306380378, # 931873675454595102-beta, 924357517306380378-original
+    status=discord.Status.idle,
+    enable_debug_events=True
     )
 
 async def loadcogs():
@@ -38,7 +39,7 @@ async def loadcogs():
             await bot.load_extension(fr"Cogs.{filename[:-3]}")
 loop.run_until_complete(loadcogs())
 
-@bot.command()
+@bot.command(description="Доступ к этой команде есть только у моего создателя.")
 async def cog(ctx: commands.Context, *extension):
     if ctx.author.id == bot.owner_id:
         if str(extension[0]).lower() == "reload":
@@ -54,8 +55,9 @@ async def cog(ctx: commands.Context, *extension):
             except ExtensionNotLoaded:
                 await ctx.send("`Extension could not be found.`")
 
-@bot.command()
+@bot.command(description="Доступ к этой команде есть только у моего создателя.")
 async def poll(ctx: commands.Context):
+    # самая полезная команда.
     if ctx.author.id == bot.owner_id:
         a = await ctx.author.voice.channel.connect()
         await a.poll_voice_ws(reconnect=False)
@@ -65,18 +67,21 @@ async def checkForDisabled(ctx: commands.Context):
     command = ctx.command.name
     res = await bot.bd.fetch({'guildid': ctx.guild.id, 'commandname': command}, category='disabledcmds')
     if res.status:
-        raise commands.CommandError(f'`❌ команда {command} в данный момент отключена.\nУзнайте у администрации сервера причины выключения.`')
+        raise CommandDisabled(f'`❌ команда {command} в данный момент отключена.\nУзнайте у администрации сервера причины выключения.`')
 
 @bot.after_invoke
 async def additionalChecks(ctx: commands.Context):
     pass
+
 try:
-    loop.run_until_complete(bot.start(os.getenv('TOKEN')))
+    loop.run_until_complete(bot.start(os.environ.get('TOKEN')))
+except KeyboardInterrupt:
+    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{bot.user.name}/INFO]: Discord Bot Stopped... (KeyboardInterrupt).")
 except ClientConnectorError:
-    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [Viola/INFO]: Discord Bot Start Failed... (Connection issues).")
+    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{bot.user.name}/INFO]: Discord Bot Start Failed... (Connection issues).")
 except discord.errors.DiscordServerError:
-    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [Viola/INFO]: Discord Bot Start Failed... (Discord Servers are Unavailable).")
+    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{bot.user.name}/INFO]: Discord Bot Start Failed... (Discord Servers are Unavailable).")
 except discord.errors.Forbidden:
-    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [Viola/INFO]: Discord Bot Start Failed... (403 Forbidden).")
+    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{bot.user.name}/INFO]: Discord Bot Start Failed... (403 Forbidden).")
 except discord.errors.LoginFailure:
-    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [Viola/INFO]: Discord Bot Start Failed... (Invalid Token).")
+    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{bot.user.name}/INFO]: Discord Bot Start Failed... (Invalid Token).")
