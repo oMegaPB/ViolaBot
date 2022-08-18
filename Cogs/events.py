@@ -1,16 +1,16 @@
 import discord, requests, json, datetime, os, asyncio, traceback
 from discord.ext import commands, tasks
-from typing import List, Dict, AsyncIterator
+from typing import List
 from discord.ext.commands.errors import CommandNotFound, MemberNotFound
-from discord.ext.commands import has_permissions, MissingPermissions, MissingRequiredArgument, CommandInvokeError
-from Config.components import TicketButtons, TicketClose
+from discord.ext.commands import has_permissions, MissingPermissions, MissingRequiredArgument
+from Config.components import TicketButtons, TicketClose, RoomActions
 from Config.core import Viola, CommandDisabled
 
 class events(commands.Cog):
     def __init__(self, bot: Viola):
         self.bot = bot
         self.entrys = []
-        self.buffer: List[dict] = [] # buffer for next database update
+        self.buffer: List[dict] = [] # buffer for next voicetime database update
     
     async def getmarryinfo(self, member: discord.Member):
         res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='marry')
@@ -23,24 +23,27 @@ class events(commands.Cog):
             args = {'main': member.id, 'partner': res.value['partnerid'], 'date': res.value['date']}
             return args
     
-    async def tickets_renew(self):
+    async def renew_interactions(self):
         all = await self.bot.bd.rows(mode='list', category='tickets')
         for i in all.value:
-            id = int(i['channel_id'])
-            channel = self.bot.get_channel(id)
-            if channel is not None:
-                embed = discord.Embed(color=discord.Color.green())
-                embed.set_author(name='Tickets.', icon_url='https://w7.pngwing.com/pngs/680/355/png-transparent-icon-e-mail-e-mail-mail.png')
-                embed.description = '`Чтобы создать тикет нажмите на кнопку ниже.`'
-                try:
-                    embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{channel.guild.icon.url}')
-                except Exception:
-                    embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
-                async for message in channel.history(limit=1, oldest_first=True):
+            try:
+                id = int(i['channel_id'])
+                channel = self.bot.get_channel(id)
+                if channel is not None:
+                    embed = discord.Embed(color=discord.Color.green())
+                    embed.set_author(name='Tickets.', icon_url='https://w7.pngwing.com/pngs/680/355/png-transparent-icon-e-mail-e-mail-mail.png')
+                    embed.description = '`Чтобы создать тикет нажмите на кнопку ниже.`'
                     try:
-                        await message.edit(content='', embed=embed, view=TicketButtons())
-                    except (discord.errors.Forbidden, Exception):
-                        pass
+                        embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{channel.guild.icon.url}')
+                    except Exception:
+                        embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
+                    async for message in channel.history(limit=1, oldest_first=True):
+                        try:
+                            await message.edit(content='', embed=embed, view=TicketButtons())
+                        except (discord.errors.Forbidden, Exception):
+                            pass
+            except BaseException as e:
+                print(e, 'renew 1')
         all = await self.bot.bd.rows(mode='list', category='ticketusers')
         try:
             for i in all.value:
@@ -51,8 +54,18 @@ class events(commands.Cog):
                     except discord.errors.Forbidden:
                         pass
         except BaseException as e:
-            pass
-    
+            print(e, 'renew 2')
+        all = await self.bot.bd.rows(mode='list', category='rooms')
+        try:
+            for i in all.value:
+                channel = self.bot.get_channel(int(i['textid']))
+                async for message in channel.history(limit=1, oldest_first=True):
+                    try:
+                        await message.edit(view=RoomActions())
+                    except discord.errors.Forbidden:
+                        pass
+        except BaseException as e:
+            print(e, 'renew 3')
     @tasks.loop(seconds=250)
     async def update_VoiceChannel_members(self):
         all = await self.bot.bd.rows(mode='list', category='voicemembers')
@@ -103,7 +116,7 @@ class events(commands.Cog):
         self.update_VoiceChannel_members.start()
         self.update_VoiceTime_info.start()
         self.update_VoiceTime_Database.start()
-        await self.tickets_renew()
+        await self.renew_interactions()
     
     @commands.Cog.listener()
     async def on_ready(self):
@@ -163,6 +176,23 @@ class events(commands.Cog):
     async def on_voice_state_update(self, member: discord.Member, before: discord.member.VoiceState, after: discord.member.VoiceState):
         # <AuditLogEntry id=998929831263731784 action=AuditLogAction.member_disconnect user=<Member id=728165963480170567 name='MegaWatt_' discriminator='1114' bot=False nick=None guild=<Guild id=742394556405907457 name="Viola's house" shard_id=0 chunked=True member_count=13>>>
         again = False
+        async def clearrooms(category: discord.CategoryChannel, acceptedvoicechannel: int):
+            for x in category.voice_channels:
+                if len(x.members) == 0:
+                    if x.id != acceptedvoicechannel:
+                        await x.delete()
+        res = await self.bot.bd.fetch({'guildid': member.guild.id}, category='rooms')
+        if res.status:
+            category: discord.CategoryChannel = discord.utils.get(member.guild.categories, id=int(res.value['catid']))
+            self.bot.loop.create_task(clearrooms(category=category, acceptedvoicechannel=int(res.value['voiceid'])))
+            if after.channel.id == int(res.value['voiceid']):
+                if category is not None:
+                    overwrites = {
+                        member.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                        member: discord.PermissionOverwrite(manage_channels=True)
+                    }
+                    a = await category.create_voice_channel(name=f'Канал {member.name}', user_limit=2, overwrites=overwrites)
+                    await member.move_to(a)
         if before.channel is None and after.channel is not None:
             print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} зашел в канал {after.channel.name} | {after.channel.guild.name}')
             self.buffer.append({'memberid': member.id, 'guildid': member.guild.id, 'amount': 0})
@@ -191,6 +221,7 @@ class events(commands.Cog):
                     b = round(datetime.datetime.utcnow().timestamp())
                     if b - a > 25:
                         old = True
+                    print(b - a)
                     if entry.user.id != member.id:
                         if ((not old) or again) and not ((not old) and again):
                             embed = discord.Embed(title='Отключение из голосового канала.', description=f'`{entry.user.name}#{entry.user.discriminator}` отключил `{member.name}#{member.discriminator}` из канала <#{before.channel.id}>')

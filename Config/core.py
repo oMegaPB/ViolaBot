@@ -1,3 +1,4 @@
+import traceback
 import discord, lavalink, asyncio, aiohttp
 import datetime, typing
 from discord.ext import commands
@@ -91,11 +92,11 @@ class ViolaEmbed(discord.Embed):
             try:
                 self.set_footer(text=f'{self.ctx.guild.name}', icon_url=f'{self.ctx.guild.icon.url}')
             except Exception:
-                self.set_footer(text=f'{self.ctx.guild.name}', icon_url=f'{self.ctx.me.avatar.url}')
+                self.set_footer(text=f'{self.ctx.guild.name}', icon_url=f'{self.ctx.bot.user.avatar.url}')
             try:
                 self.set_thumbnail(url=f'{self.ctx.guild.icon.url}')
             except Exception:
-                self.set_thumbnail(url=f'https://i.ytimg.com/vi/onTNE293NR0/hqdefault.jpg')
+                self.set_thumbnail(url=self.ctx.bot.user.avatar.url)
         colors = {'success': discord.Color.green(), 'warning': discord.Color.yellow(), 'error': discord.Color.red()}
         titles = {'success': 'Успешно.', 'warning': 'Внимание.', 'error': 'Ошибка.'}
         urls = {
@@ -118,37 +119,35 @@ class ViolaHelp(commands.HelpCommand):
         super().__init__()
     
     async def send_bot_help(self, mapping: dict):
-        embeds = []
-        for i, j in enumerate(mapping.keys()):
-            try:
-                if j.__cog_name__ == 'events':
-                    continue
-            except AttributeError:
-                pass
-            j: commands.Cog
-            x: commands.Command
-            embed = ViolaEmbed(ctx=self.context)
-            title = j.__cog_name__ if j is not None else 'Команды администрации.'
-            title += '\n' + j.__cog_description__ if j is not None else ''
-            embed.title = title
-            description = ''
-            for x in mapping[j]:
-                description += f'**{x.name}**\n'
-            embed.description = description
-            embeds.append(embed)
-        await self.context.channel.send(embed=embeds[0], view=embedButtons(embeds=embeds, ctx=self.context, bot=self.context.bot))
+        async with self.context.channel.typing():
+            embeds = []
+            for i, j in enumerate(mapping.keys()):
+                try:
+                    if j.__cog_name__ == 'events':
+                        continue
+                except AttributeError:
+                    pass
+                j: commands.Cog
+                x: commands.Command
+                embed = ViolaEmbed(ctx=self.context)
+                embed.color = discord.Color.dark_gray()
+                title = j.__cog_name__ if j is not None else 'Команды администрации.'
+                title += '\n' + j.__cog_description__ if j is not None else ''
+                embed.title = title
+                description = ''
+                for x in mapping[j]:
+                    aliases = ("`Псевдонимы: " + x.aliases[0] + "`") if len(x.aliases) > 0 else False
+                    description += f'**{x.name}** {aliases if aliases else ""}\n'
+                embed.description = description
+                embeds.append(embed)
+            await self.context.channel.send(embed=embeds[0], view=embedButtons(embeds=embeds, ctx=self.context, bot=self.context.bot))
        
     async def send_command_help(self, command: commands.Command):
         embed = ViolaEmbed(ctx=self.context)
+        embed.color = discord.Color.dark_gray()
         embed.title = f'Команда {command.name}'
         embed.description = command.description
         await self.context.send(embed=embed)
-      
-    async def send_group_help(self, group):
-        await self.context.send("This is help group")
-    
-    async def send_cog_help(self, cog):
-        await self.context.send("This is help cog")
     
     async def command_not_found(self, command):
         return f'Команда {command} не найдена.'

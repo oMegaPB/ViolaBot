@@ -3,7 +3,7 @@ from discord.ext import commands
 from Config.utils import YT, ACRcloud
 from typing import List
 from discord.ext.commands import has_permissions
-from Config.components import Reactions, SetInfo, Logs, TicketButtons
+from Config.components import Reactions, SetInfo, Logs, TicketButtons, RoomsCallback, RoomActions
 from Config.utils import embedButtons
 from discord import app_commands
 from Config.core import Viola, ViolaEmbed
@@ -109,7 +109,7 @@ class cmds(commands.Cog, description='**Основные команды бота
                         member = ctx.guild.get_member(int(i['memberid']))
                     except:
                         member = None
-                        member = self.bot.get_user(int(i['memberid']))
+                        member = await self.bot.fetch_user(int(i['memberid']))
                         try:
                             memberi = f'{member.name}#{member.discriminator} (Вышел)'
                         except AttributeError:
@@ -407,7 +407,7 @@ class cmds(commands.Cog, description='**Основные команды бота
                 a = member.avatar.url is None
                 url = member.avatar.url
             except Exception:
-                url = 'https://i.ytimg.com/vi/onTNE293NR0/hqdefault.jpg'
+                url = self.bot.user.avatar.url
 
             embed = discord.Embed(color=member.top_role.color)
             description = f'{member.mention}\n(Заполнить информацию о себе: `s!setinfo`)\n\n'
@@ -469,6 +469,7 @@ class cmds(commands.Cog, description='**Основные команды бота
                 description += f'`Присоединился к серверу:` <t:{int(member.joined_at.timestamp())}:R>\n'
             else:
                 description += f'`Впервые присоединился к серверу:` <t:{res.value["time"]}:R>\n'
+            description += '`Имеет премиум подписку.`<:nitro:1009420900535386122>\n' if member.premium_since is not None else "`Не имеет Нитро.`\n"
             if member.activity is not None:
                 if member.activity.type is discord.ActivityType.playing:
                     description += f'`Играет в` **{member.activity.name}**'
@@ -559,13 +560,13 @@ class cmds(commands.Cog, description='**Основные команды бота
         if user is None:
             user = ctx.author
         embed = ViolaEmbed(ctx=ctx)
-        embed.description = f'Аватар Пользователя **{user}**'
+        embed.description = f'`Аватар Пользователя` **{user}**'
         embed.set_thumbnail(url=None)
         try:
             embed.set_image(url=user.avatar.url)
             await ctx.send(embed = embed)
         except Exception:
-            await ctx.message.reply('Нету аватара.')
+            await ctx.message.reply('`У пользователя нет аватара.`')
     
     @commands.command(description="Поставьте свой префикс бота на этом сервере. \n(бот так же будет реагировать на свой основной префикс `s!`)")
     @has_permissions(administrator=True)
@@ -639,8 +640,8 @@ class cmds(commands.Cog, description='**Основные команды бота
     @commands.command(description="Очистка чата.\nПараметры: лимит и (опционально) пользователь.\nУдаляет (лимит) сообщений и если указан пользователь, то удаляет сообщения от конкретного пользователя.")
     async def purge(self, ctx: commands.Context, limit, *user):
         if not user:
-            if int(limit) > 100:
-                await ctx.message.reply('`Лимит сообщений не может быть больше 100.`')
+            if int(limit) > 1000:
+                await ctx.message.reply('`Лимит сообщений не может быть больше 1000.`')
                 return
             deleted = await ctx.channel.purge(limit=int(limit))
             await ctx.channel.send(f'Удалено {len(deleted)} сообщений.')
@@ -873,10 +874,12 @@ class cmds(commands.Cog, description='**Основные команды бота
                 await ctx.author.send(f'Something went wrong {e}\n{type(e)}')
     
     @commands.command(description='Утилита.\nНастройте Приватные голосовые комнаты.')
+    @has_permissions(administrator=True)
     async def rooms(self, ctx: commands.Context):
-        embed = ViolaEmbed(ctx=ctx)
-        embed.description = '>>> Выберите одно из доступных действий:'
-        await ctx.channel.send(embed=embed)
+        async with ctx.channel.typing():
+            embed = ViolaEmbed(ctx=ctx)
+            embed.description = '>>> Выберите одно из доступных действий:'
+            await ctx.channel.send(embed=embed, view=RoomsCallback())
 # -----------------------------------------------------------------------------------------------------------
 async def setup(bot: commands.Bot):
     await bot.add_cog(cmds(bot))

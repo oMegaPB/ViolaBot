@@ -776,7 +776,7 @@ class Name(discord.ui.Modal, title='Как вас зовут?'):
         await interaction.client.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': answer}, category='name')
         await interaction.response.send_message(f'`Вы обновили своё Имя!`:\n{answer}', ephemeral=True)
 class SetInfo(discord.ui.View):
-    def __init__(self, *, timeout=180.0, bot: Viola, ctx: commands.Context):
+    def __init__(self, *, timeout=180.0, ctx: commands.Context):
         super().__init__(timeout=timeout)
         self.add_item(closeButton(label='❌Выход', style=discord.ButtonStyle.red))
         self.ctx=ctx
@@ -855,3 +855,80 @@ class TicketButtons(discord.ui.View):
         embed = ViolaEmbed()
         embed.description = '**Ваш тикет был успешно создан! Не стесняйтесь задавать любые вопросы!**'
         await channel.send(content=f'<@!{interaction.user.id}>', embed=embed, view=TicketClose())
+# Rooms -----------------------------------------------------------------------------------------------------------
+class RoomsCallback(discord.ui.View):
+    def __init__(self, *, timeout=None):
+        super().__init__(timeout=timeout)
+    @discord.ui.select(placeholder='Выберите опцию...', options=[
+        discord.SelectOption(label="Добавить приватные комнаты."),
+        discord.SelectOption(label="Удалить приватные комнаты."),
+        discord.SelectOption(label="Настроить комнаты."),
+        ])
+    async def roomsactions(self, interaction: discord.Interaction, select: discord.ui.Select):
+        if select.values[0] == 'Добавить приватные комнаты.':
+            await interaction.response.defer(ephemeral= True, thinking= True)
+            res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='rooms')
+            if not res.status:
+                category = await interaction.guild.create_category(name='- Приватные комнаты -', reason='private rooms')
+                channel = await category.create_voice_channel(name='Создать канал [+]', reason='private rooms', user_limit=1)
+                channel2 = await category.create_text_channel(name='Управление📡', reason='private rooms')
+                await channel2.send(embed=ViolaEmbed(ctx=await interaction.client.get_context(interaction.message), title='Приватные комнаты.', description='Выберите нужное вам действие.'), view=RoomActions())
+                await interaction.client.bd.add({'guildid': interaction.guild.id, 'voiceid': channel.id, 'catid': category.id, 'textid': channel2.id}, category='rooms')
+                embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message))
+                embed.description = '`Приватные голосовые комнаты успешно созданы.`'
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message), format='error')
+                embed.description = f'`Эта функция уже включена на этом сервере.`\n`Канал:` <#{res.value["voiceid"]}>\n**(Если Категория или один из каналов были удалены, вы можете пересоздать систему приватных комнат.)**'
+                await interaction.followup.send(embed=embed, ephemeral=True)
+        elif select.values[0] == 'Удалить приватные комнаты.':
+            await interaction.response.defer(ephemeral= True, thinking= True)
+            res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='rooms')
+            if not res.status:
+                embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message), format='error')
+                embed.description = '`Чтобы удалить систему приватных комнат, ее нужно для начала создать.`'
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                category: discord.CategoryChannel = discord.utils.get(interaction.guild.categories, id=int(res.value['catid']))
+                for x in category.channels:
+                    await x.delete()
+                await category.delete()
+                await interaction.client.bd.remove({'guildid': interaction.guild.id}, category='rooms')
+                embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message))
+                embed.description = '`Система приватных комнат успешно удалена.`'
+                await interaction.followup.send(embed=embed, ephemeral=True)
+class RoomActions(discord.ui.View):
+    def __init__(self, *, timeout=None):
+        super().__init__(timeout=timeout)
+    @discord.ui.button(label="👪", style=discord.ButtonStyle.green) # Limit
+    async def ticket(self, interaction:discord.Interaction, button: discord.ui.Button):
+        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='rooms')
+        category: discord.CategoryChannel = discord.utils.get(interaction.guild.categories, id=int(res.value['catid']))
+        if not interaction.user.voice:
+            embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message), format='error')
+            embed.description = '`Зайдите в голосовой канал для начала хотя бы что-ли.`'
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        if interaction.user.voice.channel not in category.voice_channels:
+            embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message), format='error')
+            embed.description = '`Этот канал не относится к приватным комнатам.`'
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        if interaction.user.voice.channel.permissions_for(interaction.user).manage_channels:
+            await interaction.response.send_message('`Укажите лимит канала от 1 до 99:`', ephemeral=True)
+            try:
+                msg: discord.Message = await interaction.client.wait_for('message', timeout=60.0, check=lambda m: m.author.id==interaction.user.id)
+                await msg.delete()
+            except asyncio.TimeoutError:
+                return
+            try:
+                amount = int(msg.content)
+            except ValueError:
+                await interaction.followup.send(f'`Неверный формат. Укажите число от 1 до 99 включительно.`', ephemeral=True)
+                return
+            if amount < 1 or amount > 99:
+                await interaction.followup.send(f'`Укажите число от 1 до 99 включительно.`', ephemeral=True)
+                return
+            await interaction.user.voice.channel.edit(user_limit=amount)
+            await interaction.followup.send(f'`Лимит канала изменен на {amount}`', ephemeral=True)
+            
