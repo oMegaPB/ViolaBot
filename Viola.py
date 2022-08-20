@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 import discord, os, requests, json, datetime, sys, asyncio, traceback, random, typing, time
 from discord.ext import commands
-from discord.ext.commands import has_permissions
 from discord.ext.commands.errors import ExtensionNotLoaded
 from aiohttp.client_exceptions import ClientConnectorError
 from Config.core import Viola, CommandDisabled, ViolaHelp
 
-loop = asyncio.get_event_loop()
+loop = asyncio.new_event_loop()
 
 async def guild_based_prefix(bot: Viola, message: discord.Message):
     res = await bot.bd.fetch({'guildid': message.guild.id}, category='prefixes')
@@ -25,13 +24,13 @@ bot = Viola(
     help_command=ViolaHelp(), 
     max_messages=5000,
     allowed_mentions=discord.AllowedMentions(everyone=False, replied_user=True, roles=False, users=True),
-    activity=discord.Game(name="with discord api"),
+    activity=discord.Game(name="Скайрим"),
     application_id=924357517306380378, # 931873675454595102-beta, 924357517306380378-original
-    status=discord.Status.idle,
+    status=discord.Status.online,
     enable_debug_events=True
     )
 
-async def loadcogs():
+async def loadcogs() -> None:
     for filename in os.listdir(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Cogs')):
         if filename.endswith(".py"):
             if filename == 'music.py':
@@ -39,42 +38,41 @@ async def loadcogs():
             await bot.load_extension(fr"Cogs.{filename[:-3]}")
 loop.run_until_complete(loadcogs())
 
+@commands.is_owner()
 @bot.command(description="Доступ к этой команде есть только у моего создателя.")
 async def cog(ctx: commands.Context, *extension):
-    if ctx.author.id == bot.owner_id:
-        if str(extension[0]).lower() == "reload":
-            try:
-                await bot.reload_extension(f"Cogs.{extension[1]}")
-                await ctx.send(f"`Succesfully reloaded` **{extension[1]}**")
-            except ExtensionNotLoaded:
-                await ctx.send("`Extension could not be found.`")
-        elif str(extension[0]).lower() == 'load':
-            try:
-                await bot.load_extension(f"Cogs.{extension[1]}")
-                await ctx.send(f"`Succesfully loaded` **{extension[1]}**")
-            except ExtensionNotLoaded:
-                await ctx.send("`Extension could not be found.`")
+    if str(extension[0]).lower() == "reload":
+        try:
+            await bot.reload_extension(f"Cogs.{extension[1]}")
+            await ctx.send(f"`Succesfully reloaded` **{extension[1]}**")
+        except ExtensionNotLoaded:
+            await ctx.send("`Extension could not be found.`")
+    elif str(extension[0]).lower() == 'load':
+        try:
+            await bot.load_extension(f"Cogs.{extension[1]}")
+            await ctx.send(f"`Succesfully loaded` **{extension[1]}**")
+        except ExtensionNotLoaded:
+            await ctx.send("`Extension could not be found.`")
 
+@commands.is_owner()
 @bot.command(description="Доступ к этой команде есть только у моего создателя.")
-async def poll(ctx: commands.Context):
-    # самая полезная команда.
-    if ctx.author.id == bot.owner_id:
-        a = await ctx.author.voice.channel.connect()
-        await a.poll_voice_ws(reconnect=False)
+async def poll(ctx: commands.Context) -> None: # самая полезная команда.
+    a = await ctx.author.voice.channel.connect()
+    await a.poll_voice_ws(reconnect=False)
 
 @bot.before_invoke
-async def checkForDisabled(ctx: commands.Context):
+async def checkForDisabled(ctx: commands.Context) -> None:
     command = ctx.command.name
     res = await bot.bd.fetch({'guildid': ctx.guild.id, 'commandname': command}, category='disabledcmds')
     if res.status:
         raise CommandDisabled(f'`❌ команда {command} в данный момент отключена.\nУзнайте у администрации сервера причины выключения.`')
 
 @bot.after_invoke
-async def additionalChecks(ctx: commands.Context):
+async def additionalChecks(ctx: commands.Context) -> None:
     pass
 
 try:
-    loop.run_until_complete(bot.start(os.environ.get('TOKEN')))
+    loop.run_until_complete(bot.start(os.environ.get('TOKEN_BETA')))
 except KeyboardInterrupt:
     print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{bot.user.name}/INFO]: Discord Bot Stopped... (KeyboardInterrupt).")
 except ClientConnectorError:

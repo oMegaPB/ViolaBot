@@ -180,7 +180,7 @@ class Hypixel(commands.Cog, description='Hypixel related commands.'):
                 try:
                     info = profile.GetStats(1)
                 except Exception:
-                    print(traceback.format_exc())
+                    return print(traceback.format_exc())
                 embed = discord.Embed(title=info[12], url=f'https://plancke.io/hypixel/player/stats/{info[12]}', color = 0xfcf9ff)
                 embed.set_author(name = f"Player Stats", icon_url=f'https://crafatar.com/avatars/{info[11]}?overlay=true')
                 info[3] =  ('{:,}'.format(info[3]))

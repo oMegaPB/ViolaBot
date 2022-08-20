@@ -116,7 +116,7 @@ class ACRcloud:
             return Song(title, author, thumbnail, shazam)
         return False
 # ----------------------------------------------------------------------------------
-class embedButtons(discord.ui.View):
+class Paginator(discord.ui.View):
     def __init__(self, *, timeout=60.0, embeds: List[discord.Embed], ctx: commands.Context, bot: commands.Bot):
         super().__init__(timeout=timeout)
         self.embeds = embeds

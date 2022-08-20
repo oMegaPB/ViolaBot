@@ -10,7 +10,7 @@
 
 ___
 
-> **DataBase** [**`MongoDB`**](https://www.mongodb.com/)
+> **DataBase:** [**`MongoDB`**](https://www.mongodb.com/)
 
 > **Creator:** [**`MegaWatt_`**](https://discord.com/users/728165963480170567)
 

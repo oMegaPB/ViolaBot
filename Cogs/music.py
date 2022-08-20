@@ -21,7 +21,7 @@ class Music(commands.Cog):
     async def connectnodes(self):
         if not hasattr(self.bot, 'lavalink'):
             self.bot.lavalink = lavalink.Client(self.bot.user.id)
-        # self.bot.lavalink.node_manager.add_node(host='192.168.56.1', port=8080, password='test', region='eu', resume_key='default-node', resume_timeout=60, name=None, reconnect_attempts=3)
+        self.bot.lavalink.node_manager.add_node(host='lavalink.cloudblue.ml', port=1555, password='lava', region='eu', resume_key='default-node', resume_timeout=60, name=None, reconnect_attempts=3)
     async def genseconds(self):
         while True:
             try:
@@ -90,7 +90,7 @@ class Music(commands.Cog):
                 player: lavalink.DefaultPlayer = event.player
                 embed = discord.Embed(color=discord.Color.blurple())
                 try:
-                    tim = self.bot.GetTime(player.current.duration / 1000)
+                    tim = self.bot.format_time(player.current.duration / 1000)
                 except AttributeError:
                     pass
                 try:
@@ -104,7 +104,7 @@ class Music(commands.Cog):
                     repeat = '\nРежим повтора включен. 🔁'
                 else:
                     repeat = ''
-                progress = '**[**' + ('🟩' * int(percents // 10)) + ('🟥' * (10 - int(percents // 10))) + f'**]** `{self.bot.GetTime(seconds)}`'
+                progress = '**[**' + ('🟩' * int(percents // 10)) + ('🟥' * (10 - int(percents // 10))) + f'**]** `{self.bot.format_time(seconds)}`'
                 embed.description = f'**Сейчас играет:**\n[**{name}**]({url})\n`Длительность:` **[{tim}]**\n`Запросил:` **{self.bot.get_user(player.current.requester)}**\n\n{progress}{repeat}' #\nNode: `{player.node}`
                 embed.set_thumbnail(url=thumb(player.current.identifier))
                 while True:
@@ -125,8 +125,8 @@ class Music(commands.Cog):
     
     @commands.command(aliases=['p'])
     async def play(self, ctx: commands.Context, *, Трек):
-        await ctx.channel.send('`Музыка временно отключена.`')
-        return
+        # await ctx.channel.send('`Музыка временно отключена.`')
+        # return
         query: str = Трек
         async with ctx.message.channel.typing():
             playing = False
@@ -162,7 +162,8 @@ class Music(commands.Cog):
                 player.add(requester=ctx.author.id, track=track)
                 if not player.is_playing:
                     try:
-                        await ctx.author.voice.channel.connect(cls=LavalinkVoiceClient, self_deaf=True)
+                        a = await ctx.author.voice.channel.connect(cls=LavalinkVoiceClient, self_deaf=True)
+                        player.store('client', a)
                     except discord.errors.ClientException:
                         pass
                     await player.play()
@@ -186,7 +187,11 @@ class Music(commands.Cog):
                     tracks = results['tracks']
                     for track in tracks:
                         player.add(requester=ctx.author.id, track=track)
-                    await ctx.author.voice.channel.connect(cls=LavalinkVoiceClient)
+                    try:
+                        a = await ctx.author.voice.channel.connect(cls=LavalinkVoiceClient, self_deaf=True)
+                        player.store('client', a)
+                    except discord.errors.ClientException:
+                        pass
                     embed = discord.Embed(color=discord.Color.blurple())
                     embed.title = f'Плейлист из {len(tracks)} треков добавлен в очередь.'
                     embed.description = f'**{results["playlistInfo"]["name"]}** - {len(tracks)} Треков.'

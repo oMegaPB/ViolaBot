@@ -31,10 +31,15 @@ class MongoDB:
         username, password = os.environ.get('MONGODB').split(':')
         self.client = MongoClient(f"mongodb+srv://{username}:{password}@cluster0.atwbj6s.mongodb.net/?retryWrites=true&w=majority")
         self.db = self.client[database] if database else self.client['Viola']
+        self._operations = 0
     
     @property
     def categories(self) -> List[str]:
         return self.db.list_collection_names()
+    
+    @property
+    def operations(self) -> int:
+        return self._operations
     
     @property
     def databases(self):
@@ -47,6 +52,7 @@ class MongoDB:
         Returns all values from specified database category.
         
         """
+        self._operations += 1
         if mode == 'str':
             end = ''
             for i in self.db[category].find({}):
@@ -70,6 +76,7 @@ class MongoDB:
         Adding value into specified category.
         
         """
+        self._operations += 1
         try:
             res = await self.fetch(data, category=category)
         except BSONError:
@@ -78,7 +85,6 @@ class MongoDB:
         if res.status:
             return
         self.db[category].insert_one(data)
-        return
 
     async def fetch(self, data: Dict[Any, Any], category: str, mode: str = 'one') -> Response:
         """
@@ -87,6 +93,7 @@ class MongoDB:
         Returns values sorted by key from specified database category.
         
         """
+        self._operations += 1
         if mode == 'one':
             value = self.db[category].find_one(data)
             if value:
@@ -107,12 +114,13 @@ class MongoDB:
         Removes item from specified database category.
         
         """
+        self._operations += 1
         count = self.db[category].delete_many(data).deleted_count
         if count > 0:
             return Response(status=True, value=count)
         return Response(status=False, value=0)
     
-    async def drop(self, category: str):
+    def drop(self, category: str) -> None:
         """
         |maybecoro|
 

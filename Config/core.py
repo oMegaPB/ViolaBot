@@ -1,12 +1,14 @@
-import traceback
+import traceback, os, io
 import discord, lavalink, asyncio, aiohttp
-import datetime, typing
+import datetime
+from typing import Optional, Dict, Any, List, Union
 from discord.ext import commands
-from Config.utils import embedButtons
+from Config.utils import Paginator
 from Config.assets.database import MongoDB
+from PIL import Image, ImageFont, ImageDraw
 
 class Viola(commands.Bot):
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.bd = MongoDB()
         print('-------------------------------------------')
@@ -18,22 +20,77 @@ class Viola(commands.Bot):
         # self.tree.copy_global_to(guild=guild)
         await self.tree.sync() # guild=guild
     
-    async def getLogChannel(self, guildid) -> typing.Optional[discord.TextChannel]:
+    async def getLogChannel(self, guildid) -> Optional[discord.TextChannel]:
         res = await self.bd.fetch({'guildid': guildid}, category='logs')
         if res.status:
             value = res.value
             channel: discord.TextChannel = self.get_channel(int(value['channel_id']))
             return channel
-        return None  
     
-    def GetTime(self, seconds: int):
+    def format_time(self, seconds: Union[int, float]) -> str:
         m, s = divmod(int(seconds), 60)
         h, m = divmod(m, 60)
         if seconds >= 3600:
             return f'{h:02d}:{m:02d}:{s:02d}'
         return f'{m:02d}:{s:02d}'
     
-    def GetLevel(self, amount: int) -> int:
+    async def get_marry_info(self, member: discord.Member) -> Optional[Dict[str, Any]]:
+        res = await self.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='marry')
+        if not res.status:
+            res = await self.bd.fetch({'guildid': member.guild.id, 'partnerid': member.id}, category='marry')
+            if res.status:
+                args = {'main': member.id, 'partner': res.value['memberid'], 'date': res.value['date']}
+                return args
+        else:
+            args = {'main': member.id, 'partner': res.value['partnerid'], 'date': res.value['date']}
+            return args
+    
+    async def get_welcome_image(self, member: discord.Member) -> discord.File:
+        if not member.avatar:
+            avatar_url = 'https://raw.githubusercontent.com/AdvertiseYourServer/Default-Discord-Avatars/master/4.png'
+        else:
+            avatar_url = member.avatar.url
+        im = Image.open(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'image.png')).convert('RGBA')
+        mainfont = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'DejaVuSans.ttf'), size=25)
+        async with self.session.get(avatar_url) as response:
+            avatar = Image.open(io.BytesIO(await response.content.read())).resize((170, 170), 0).convert('RGBA')
+            mask_im = Image.new("L", avatar.size, 0)
+            draw = ImageDraw.Draw(mask_im)
+            text = ImageDraw.Draw(im)
+            text.text((220, 70), text='Добро пожаловать!', font=mainfont, fill=(255, 255, 255, 255))
+            text.ellipse((10, 35, 200, 220), fill='#fcf3ff')
+            draw.ellipse((0, 0, 170, 170), fill=255)
+            im.paste(avatar, (20, 42), mask=mask_im)
+            draw.ellipse((0, 0, 100, 100), fill=255)
+            class globals:
+                imgforfont= im.crop((210, 0, 750, 250))
+            def set_size(fontsize: int) -> Image.Image:
+                tmp=globals.imgforfont.copy()
+                font = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'DejaVuSans.ttf'), size=fontsize)
+                imdraw = ImageDraw.Draw(tmp)
+                imdraw.text(text=f'{member.display_name}#{member.discriminator}', xy=(8, 115), font=font)
+                pixels = tmp.load()
+                breaked = False
+                for i in range(475, 530):
+                    for j in range(100, 150):
+                        if pixels[i, j] == (255, 255, 255, 255):
+                            breaked = True
+                            break
+                        if breaked:
+                            break
+                if not breaked:
+                    globals.imgforfont = tmp
+                    return
+                else:
+                    set_size(fontsize=fontsize-1)
+            set_size(50)
+            im.paste(globals.imgforfont, (210, 0))
+            image_bytes = io.BytesIO()
+            im.save(image_bytes, format='PNG')
+            image_bytes.seek(0)
+            return discord.File(image_bytes, filename=f'WelcomeScreen.png')
+    
+    def GetLevel(self, amount: int) -> List[int]:
         amount += 1
         level = 0
         additional = 1
@@ -118,7 +175,7 @@ class ViolaHelp(commands.HelpCommand):
     def __init__(self):
         super().__init__()
     
-    async def send_bot_help(self, mapping: dict):
+    async def send_bot_help(self, mapping: Dict[Any, Any]):
         async with self.context.channel.typing():
             embeds = []
             for i, j in enumerate(mapping.keys()):
@@ -131,7 +188,7 @@ class ViolaHelp(commands.HelpCommand):
                 x: commands.Command
                 embed = ViolaEmbed(ctx=self.context)
                 embed.color = discord.Color.dark_gray()
-                title = j.__cog_name__ if j is not None else 'Команды администрации.'
+                title = j.__cog_name__ if j is not None else 'Без категории.'
                 title += '\n' + j.__cog_description__ if j is not None else ''
                 embed.title = title
                 description = ''
@@ -140,7 +197,7 @@ class ViolaHelp(commands.HelpCommand):
                     description += f'**{x.name}** {aliases if aliases else ""}\n'
                 embed.description = description
                 embeds.append(embed)
-            await self.context.channel.send(embed=embeds[0], view=embedButtons(embeds=embeds, ctx=self.context, bot=self.context.bot))
+            await self.context.channel.send(embed=embeds[0], view=Paginator(embeds=embeds, ctx=self.context, bot=self.context.bot))
        
     async def send_command_help(self, command: commands.Command):
         embed = ViolaEmbed(ctx=self.context)

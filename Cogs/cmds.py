@@ -1,12 +1,13 @@
-import discord, requests, json, datetime, os, asyncio, random, traceback, io, magic, re
+import discord, requests, json, datetime, os, asyncio, random, traceback, io, magic, re, time
 from discord.ext import commands
 from Config.utils import YT, ACRcloud
 from typing import List
 from discord.ext.commands import has_permissions
 from Config.components import Reactions, SetInfo, Logs, TicketButtons, RoomsCallback, RoomActions
-from Config.utils import embedButtons
+from Config.utils import Paginator
 from discord import app_commands
 from Config.core import Viola, ViolaEmbed
+from discord.http import Route
 # -----------------------------------------------------------------------------------------------------------
 class cmds(commands.Cog, description='**Основные команды бота.**'):
     def __init__(self, bot: Viola):
@@ -122,7 +123,7 @@ class cmds(commands.Cog, description='**Основные команды бота
                 embed.description = description
                 embeds.append(embed)
                 if len(embeds) > 1:
-                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0], view=embedButtons(embeds=embeds, ctx=ctx, bot=self.bot))
+                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0], view=Paginator(embeds=embeds, ctx=ctx, bot=self.bot))
                 else:
                     await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0])
             except Exception:
@@ -169,7 +170,7 @@ class cmds(commands.Cog, description='**Основные команды бота
                             memberi = f'{member.name}#{member.discriminator} (Вышел)'
                         except AttributeError:
                             memberi = f'<@!{int(i["memberid"])}> (Вышел)'
-                        description += f'**#{count}.** `{memberi}`\n`Время:` **{self.bot.GetTime(i["amount"])}**\n'
+                        description += f'**#{count}.** `{memberi}`\n`Время:` **{self.bot.format_time(i["amount"])}**\n'
                         done = False
                         for y in buffer2:
                             if i['memberid'] == y['memberid']:
@@ -179,7 +180,7 @@ class cmds(commands.Cog, description='**Основные команды бота
                         if not done:
                             description += f'`Уровень:` **0** | `Опыт:` **(0/30)**\n\n'
                     else:
-                        description += f'**#{count}** **{member.nick if member.nick else member.name}**\n`Время:` **{self.bot.GetTime(i["amount"])}**\n'
+                        description += f'**#{count}** **{member.nick if member.nick else member.name}**\n`Время:` **{self.bot.format_time(i["amount"])}**\n'
                         done = False
                         for y in buffer2:
                             if i['memberid'] == y['memberid']:
@@ -196,7 +197,7 @@ class cmds(commands.Cog, description='**Основные команды бота
                     except Exception:
                         embed.set_footer(text=f'{ctx.guild.name} Страница {i+1}/{len(embeds)}', icon_url=f'{self.bot.user.avatar.url}')
                 if len(embeds) > 1:
-                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0], view=embedButtons(embeds=embeds, ctx=ctx, bot=self.bot))
+                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0], view=Paginator(embeds=embeds, ctx=ctx, bot=self.bot))
                 else:
                     await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0])
             except Exception:
@@ -300,7 +301,7 @@ class cmds(commands.Cog, description='**Основные команды бота
                 pass
     
     @commands.command(description='Если вам надоела ваша вторая половинка, вы можете развестись с ней.')
-    async def divorce(self, ctx: commands.Context):
+    async def divorce(self, ctx: commands.Context) -> None:
         res = await self.bot.bd.fetch({'guildid': ctx.guild.id, 'partnerid': ctx.author.id}, category='marry')
         if not res.status:
             res = await self.bot.bd.fetch({'guildid': ctx.guild.id, 'memberid': ctx.author.id}, category='marry')
@@ -341,20 +342,9 @@ class cmds(commands.Cog, description='**Основные команды бота
             await mess.delete()
             return
     
-    async def getmarryinfo(self, member: discord.Member):
-        res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='marry')
-        if not res.status:
-            res = await self.bot.bd.fetch({'guildid': member.guild.id, 'partnerid': member.id}, category='marry')
-            if res.status:
-                args = {'main': member.id, 'partner': res.value['memberid'], 'date': res.value['date']}
-                return args
-        else:
-            args = {'main': member.id, 'partner': res.value['partnerid'], 'date': res.value['date']}
-            return args
-    
     @commands.command(description="Вспомогательная команда.\nБлагодаря этой команде вы можете обнулить уровень любого человека.")
     @has_permissions(administrator=True)
-    async def resetlevel(self, ctx: commands.Context, member: discord.Member = None):
+    async def resetlevel(self, ctx: commands.Context, member: discord.Member = None) -> None:
         if ctx.message.reference:
             msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
             member = msg.author
@@ -395,7 +385,7 @@ class cmds(commands.Cog, description='**Основные команды бота
             mess = await ctx.channel.send(embed=embed)
     
     @commands.command(aliases=['user-info'], description='Утилита.\nС помощью этой команды вы можете посмотреть подробную информацию об участнике сервера.')
-    async def user(self, ctx: commands.Context, member: discord.Member=None):
+    async def user(self, ctx: commands.Context, member: discord.Member=None) -> None:
         async with ctx.channel.typing():
             if ctx.message.reference:
                 msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
@@ -403,12 +393,10 @@ class cmds(commands.Cog, description='**Основные команды бота
             else:
                 if member is None:
                     member = ctx.author
-            try:
-                a = member.avatar.url is None
+            if member.avatar:
                 url = member.avatar.url
-            except Exception:
+            else:
                 url = self.bot.user.avatar.url
-
             embed = discord.Embed(color=member.top_role.color)
             description = f'{member.mention}\n(Заполнить информацию о себе: `s!setinfo`)\n\n'
             # -------------
@@ -448,12 +436,12 @@ class cmds(commands.Cog, description='**Основные команды бота
                 # ---------------------------------------------
                 res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='voice')
                 if res.status:
-                    tim = self.bot.GetTime(res.value['amount'])
+                    tim = self.bot.format_time(res.value['amount'])
                     description += f'`Времени в голосовых каналах:` **{tim}**\n\n'
                 else:
                     description += f'`Времени в голосовых каналах:` **0:00**\n\n'
                 # --------------------------------------------- 
-                args = await self.getmarryinfo(member)
+                args = await self.bot.get_marry_info(member)
                 if args is not None:
                     description += f'`Брак:` В браке с **{self.bot.get_user(args["partner"])}**\n`Дата свадьбы:` <t:{args["date"]}:R>\n\n'
                 else:
@@ -469,7 +457,13 @@ class cmds(commands.Cog, description='**Основные команды бота
                 description += f'`Присоединился к серверу:` <t:{int(member.joined_at.timestamp())}:R>\n'
             else:
                 description += f'`Впервые присоединился к серверу:` <t:{res.value["time"]}:R>\n'
-            description += '`Имеет премиум подписку.`<:nitro:1009420900535386122>\n' if member.premium_since is not None else "`Не имеет Нитро.`\n"
+            animated = False
+            if member.avatar:
+                if member.avatar.is_animated():
+                    animated = True
+            banner = await self.bot.http.request(Route('GET', f'/users/{member.id}'))
+            banner = banner['banner']
+            description += '`Имеет премиум подписку.`<:nitro:1009420900535386122>\n' if member.premium_since or animated or banner else ""
             if member.activity is not None:
                 if member.activity.type is discord.ActivityType.playing:
                     description += f'`Играет в` **{member.activity.name}**'
@@ -508,7 +502,7 @@ class cmds(commands.Cog, description='**Основные команды бота
             await ctx.channel.send(embed=embed)
 
     @commands.command(description="Утилита.\nРасскажите о себе. Эта информация появится на вашем профиле на сервере.")
-    async def setinfo(self, ctx: commands.Context):
+    async def setinfo(self, ctx: commands.Context) -> None:
         async with ctx.channel.typing():
             embed = ViolaEmbed(ctx=ctx)
             embed.description = '>>> Выберите действие,\nкоторое вам нужно:'
@@ -516,7 +510,7 @@ class cmds(commands.Cog, description='**Основные команды бота
     
     @commands.command(description="Отключает команду на этом сервере. Пример: `s!disable marry`\n(с отключенными командами нельзя взаимодействовать.)")
     @has_permissions(administrator=True)
-    async def disable(self, ctx: commands.Context, command):
+    async def disable(self, ctx: commands.Context, command) -> None:
         if command == 'disable' or command == 'enable':
             await ctx.message.reply('Вы не можете отключать эти команды!')
             return
@@ -531,7 +525,7 @@ class cmds(commands.Cog, description='**Основные команды бота
     
     @commands.command(description='Если команда была отключена, то включает ее назад. (с отключенными командами взаимодействовать нельзя)')
     @has_permissions(administrator=True)
-    async def enable(self, ctx: commands.Context, command):
+    async def enable(self, ctx: commands.Context, command) -> None:
         for x in self.bot.commands:
             if str(x.name) == str(command):
                 res = await self.bot.bd.fetch({'guildid': ctx.guild.id, 'commandname': str(x.name)}, category='disabledcmds')
@@ -556,7 +550,7 @@ class cmds(commands.Cog, description='**Основные команды бота
         await interaction.response.send_message(embed = embed)
 
     @commands.command(description = 'Утилита.\nУзнайте аватар любого пользователя.')
-    async def avatar(self, ctx: commands.Context, user: discord.User = None):
+    async def avatar(self, ctx: commands.Context, user: discord.User = None) -> None:
         if user is None:
             user = ctx.author
         embed = ViolaEmbed(ctx=ctx)
@@ -570,7 +564,7 @@ class cmds(commands.Cog, description='**Основные команды бота
     
     @commands.command(description="Поставьте свой префикс бота на этом сервере. \n(бот так же будет реагировать на свой основной префикс `s!`)")
     @has_permissions(administrator=True)
-    async def setprefix(self, ctx: commands.Context, prefix):
+    async def setprefix(self, ctx: commands.Context, prefix) -> None:
         async def getprefix():
             res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, category='prefixes')
             if res.status:
@@ -602,7 +596,7 @@ class cmds(commands.Cog, description='**Основные команды бота
 
     @commands.command(aliases = ['member-stats', ], description = 'Утилита.\nПсевдоним: [member-stats]\n Укажите один из двух аргументов (remove/add) и id голосового канала чтобы знать сколько у вас участников на сервере. (Бот будет переименовывать голосовой канал.)')
     @has_permissions(administrator=True)
-    async def member_count(self, ctx: commands.Context, *args):
+    async def member_count(self, ctx: commands.Context, *args) -> None:
         if args[0] == 'remove':
             id = int(str(args[1]).replace('<#', '').replace('>', ''))
             channel = self.bot.get_channel(id)
@@ -638,7 +632,7 @@ class cmds(commands.Cog, description='**Основные команды бота
     
     @has_permissions(administrator=True)
     @commands.command(description="Очистка чата.\nПараметры: лимит и (опционально) пользователь.\nУдаляет (лимит) сообщений и если указан пользователь, то удаляет сообщения от конкретного пользователя.")
-    async def purge(self, ctx: commands.Context, limit, *user):
+    async def purge(self, ctx: commands.Context, limit, *user) -> None:
         if not user:
             if int(limit) > 1000:
                 await ctx.message.reply('`Лимит сообщений не может быть больше 1000.`')
@@ -653,7 +647,7 @@ class cmds(commands.Cog, description='**Основные команды бота
             await ctx.channel.send(f'Удалено {len(deleted)} сообщений от пользователя <@!{member.id}>')
     
     @commands.command(description='Узнайте совместимость обсолютно любых двух вещей.\nПример: `s!ship Вася Петя`')
-    async def ship(self, ctx: commands.Context, *args):
+    async def ship(self, ctx: commands.Context, *args) -> None:
         if not args or len(args) != 2:
             await ctx.send('`s!ship <name1> <name2>`')
             return
@@ -677,7 +671,7 @@ class cmds(commands.Cog, description='**Основные команды бота
         await ctx.send(embed=embed)
 
     @commands.command(description='Скажите любое сообщение от имени бота.\nПример: `s!say hello`')
-    async def say(self, ctx: commands.Context, *content):
+    async def say(self, ctx: commands.Context, *content) -> None:
         async def d1(ctx: commands.Context):
             await ctx.message.delete()
         async def s2(ctx: commands.Context, content):
@@ -689,7 +683,7 @@ class cmds(commands.Cog, description='**Основные команды бота
         self.bot.loop.create_task(s2(ctx, content))
 
     @commands.command(aliases = ['guilds', ], description ='Этой командой может пользоваться только мой владелец.')
-    async def leave(self, ctx: commands.Context, *guildid):
+    async def leave(self, ctx: commands.Context, *guildid) -> None:
         if ctx.author.id == self.bot.owner_id:
             if not guildid:
                 msg = ''
@@ -710,7 +704,7 @@ class cmds(commands.Cog, description='**Основные команды бота
 
     @commands.command(description="Заглушает всех людей в голосовом канале. Если канал не указан то заглушает всех в голосовом канале автора команды.")
     @has_permissions(administrator=True)
-    async def vcm(self, ctx: commands.Context, *channel):
+    async def vcm(self, ctx: commands.Context, *channel) -> None:
         if not channel:
             try:
                 channel = ctx.author.voice.channel
@@ -742,7 +736,7 @@ class cmds(commands.Cog, description='**Основные команды бота
             return
 
     @commands.command(aliases = ['r', ], description ='Команда.\nПсевдонимы: `s!r <текст>`\nОтвечает от имени бота на сообщение другого пользователя.\n(Вам необходимо чтобы в сообщении с командой был ответ на то сообщение на которое вы хотите чтобы бот ответил.)')
-    async def reply(self, ctx: commands.Context, *content):
+    async def reply(self, ctx: commands.Context, *content) -> None:
         async def d1(ctx: commands.Context):
             await ctx.message.delete()
         async def r2(ctx: commands.Context, content, message: discord.Message):
@@ -756,7 +750,7 @@ class cmds(commands.Cog, description='**Основные команды бота
     
     @has_permissions(administrator=True)
     @commands.command(description="Утилита.\nСоздайте собственную систему тикетов.\nПринимает три параметра: create/remove/perms.\ncreate - создать\nremove - Удалить\nperms - Указать через пробел роли администрации.")
-    async def tickets(self, ctx: commands.Context, *args):
+    async def tickets(self, ctx: commands.Context, *args) -> None:
         if args:
             if args[0] == 'remove':
                 res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, category='tickets')
@@ -764,7 +758,7 @@ class cmds(commands.Cog, description='**Основные команды бота
                     def check(reaction, user):
                         return user == ctx.message.author and reaction.emoji == '💔'
                     try:
-                        mess = await ctx.send('`Удалить систему жалоб?`')
+                        mess = await ctx.send('`Удалить систему Тикетов?`')
                         await mess.add_reaction('💔')
                         await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
                         await mess.delete()
@@ -788,7 +782,7 @@ class cmds(commands.Cog, description='**Основные команды бота
                         except Exception:
                             pass
                         try:
-                            await ctx.send(f'Система жалоб удалена участником <@!{ctx.author.id}> !')
+                            await ctx.send(f'`Система жалоб удалена участником` <@!{ctx.author.id}>')
                             return
                         except discord.errors.NotFound:
                             return
@@ -863,7 +857,7 @@ class cmds(commands.Cog, description='**Основные команды бота
             await ctx.send(embed=embed)
 
     @commands.command(description="Эту команду может использовать только мой создатель.")
-    async def invite(self, ctx: commands.Context, id):
+    async def invite(self, ctx: commands.Context, id) -> None:
         if ctx.author.id == self.bot.owner_id:
             try:
                 guild = self.bot.get_guild(int(id))
@@ -875,11 +869,25 @@ class cmds(commands.Cog, description='**Основные команды бота
     
     @commands.command(description='Утилита.\nНастройте Приватные голосовые комнаты.')
     @has_permissions(administrator=True)
-    async def rooms(self, ctx: commands.Context):
+    async def rooms(self, ctx: commands.Context) -> None:
         async with ctx.channel.typing():
             embed = ViolaEmbed(ctx=ctx)
             embed.description = '>>> Выберите одно из доступных действий:'
             await ctx.channel.send(embed=embed, view=RoomsCallback())
+    
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def specify(self, ctx: commands.Context, channel: discord.TextChannel=None) -> None:
+        if channel is None:
+            await self.bot.bd.remove({'guildid': ctx.guild.id}, category='system')
+            return await ctx.channel.send(f'`функция отключена.`')
+        res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, category='system')
+        if not res:
+            await self.bot.bd.add({'guildid': ctx.guild.id, 'channelid': channel.id}, category='system')
+        else:
+            await self.bot.bd.remove({'guildid': ctx.guild.id}, category='system')
+            await self.bot.bd.add({'guildid': ctx.guild.id, 'channelid': channel.id}, category='system')
+        await ctx.channel.send(f'`Канал для сообщений бота теперь: `{channel.mention}')
 # -----------------------------------------------------------------------------------------------------------
 async def setup(bot: commands.Bot):
     await bot.add_cog(cmds(bot))

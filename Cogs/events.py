@@ -1,29 +1,18 @@
 import discord, requests, json, datetime, os, asyncio, traceback
 from discord.ext import commands, tasks
-from typing import List
+from typing import List, Dict, Any, Optional
 from discord.ext.commands.errors import CommandNotFound, MemberNotFound
 from discord.ext.commands import has_permissions, MissingPermissions, MissingRequiredArgument
 from Config.components import TicketButtons, TicketClose, RoomActions
-from Config.core import Viola, CommandDisabled
+from Config.core import Viola, CommandDisabled, ViolaEmbed
 
 class events(commands.Cog):
-    def __init__(self, bot: Viola):
+    def __init__(self, bot: Viola) -> None:
         self.bot = bot
         self.entrys = []
         self.buffer: List[dict] = [] # buffer for next voicetime database update
     
-    async def getmarryinfo(self, member: discord.Member):
-        res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='marry')
-        if not res.status:
-            res = await self.bot.bd.fetch({'guildid': member.guild.id, 'partnerid': member.id}, category='marry')
-            if res.status:
-                args = {'main': member.id, 'partner': res.value['memberid'], 'date': res.value['date']}
-                return args
-        else:
-            args = {'main': member.id, 'partner': res.value['partnerid'], 'date': res.value['date']}
-            return args
-    
-    async def renew_interactions(self):
+    async def renew_interactions(self) -> None:
         all = await self.bot.bd.rows(mode='list', category='tickets')
         for i in all.value:
             try:
@@ -39,7 +28,7 @@ class events(commands.Cog):
                         embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
                     async for message in channel.history(limit=1, oldest_first=True):
                         try:
-                            await message.edit(content='', embed=embed, view=TicketButtons())
+                            await message.edit(embed=embed, view=TicketButtons())
                         except (discord.errors.Forbidden, Exception):
                             pass
             except BaseException as e:
@@ -61,13 +50,21 @@ class events(commands.Cog):
                 channel = self.bot.get_channel(int(i['textid']))
                 async for message in channel.history(limit=1, oldest_first=True):
                     try:
-                        await message.edit(view=RoomActions())
+                        embed=ViolaEmbed(ctx=await self.bot.get_context(message))
+                        embed.title = 'Приватные комнаты.'
+                        description = f'`👪 Изменить лимит канала`\t`🚮 Забрать/Выдать доступ`\n`💁‍♂️ Передать владельца`\t`🚪 Скрыть/Открыть комнату`\n`📝 Изменить название`\t`🎙️ заглушить/разглушить кого-то`'
+                        embed.description = description
+                        if message.content == '' or not message.content:
+                            await message.edit(embed=embed, view=RoomActions())
+                        else:
+                            await message.edit(content='', embed=embed, view=RoomActions())
                     except discord.errors.Forbidden:
                         pass
         except BaseException as e:
             print(e, 'renew 3')
+    
     @tasks.loop(seconds=250)
-    async def update_VoiceChannel_members(self):
+    async def update_VoiceChannel_members(self) -> None:
         all = await self.bot.bd.rows(mode='list', category='voicemembers')
         for i in all.value:
             channel = self.bot.get_channel(int(i['voiceid']))
@@ -78,7 +75,7 @@ class events(commands.Cog):
                 pass
             await asyncio.sleep(3)
     
-    async def GetAllVoiceMembers(self) -> List[discord.Member]:
+    async def _get_all_voice_members(self) -> List[discord.Member]:
         members = []
         for g in self.bot.guilds:
             for c in g.voice_channels:
@@ -88,16 +85,17 @@ class events(commands.Cog):
         return members
     
     @tasks.loop(seconds=1)
-    async def update_VoiceTime_info(self):
+    async def update_VoiceTime_info(self) -> None:
         for x in self.buffer:
-            members = await self.GetAllVoiceMembers()
+            members = await self._get_all_voice_members()
             prevamount = x['amount'] + 1
             self.buffer.remove(x)
             for y in members:
                 if x['memberid'] == y.id:
                     self.buffer.append({'memberid': x['memberid'], 'guildid': x['guildid'], 'amount': prevamount})
+    
     @tasks.loop(seconds=15)
-    async def update_VoiceTime_Database(self):
+    async def update_VoiceTime_Database(self) -> None:
         count = 0
         for x in self.buffer:
             res = await self.bot.bd.fetch({'guildid': x['guildid'], 'memberid': x['memberid']}, category='voice')
@@ -109,9 +107,9 @@ class events(commands.Cog):
                 await self.bot.bd.add({'guildid': x['guildid'], 'memberid': x['memberid'], 'amount': amount}, category='voice')
             count += 1   
     
-    async def start_all_tasks(self):
+    async def start_all_tasks(self) -> None:
         await self.bot.load_extension("Cogs.music")
-        for x in await self.GetAllVoiceMembers():
+        for x in await self._get_all_voice_members():
             self.buffer.append({'memberid': x.id, 'guildid': x.guild.id, 'amount': 0})
         self.update_VoiceChannel_members.start()
         self.update_VoiceTime_info.start()
@@ -119,29 +117,29 @@ class events(commands.Cog):
         await self.renew_interactions()
     
     @commands.Cog.listener()
-    async def on_ready(self):
+    async def on_ready(self) -> None:
         # await self.bot.sync()
         await self.start_all_tasks()
         print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{self.bot.user.name}/INFO]: Logged in as {self.bot.user.name}.")
         print('-------------------------------------------')
     
     @commands.Cog.listener()
-    async def on_member_join(self, member: discord.Member):
+    async def on_member_join(self, member: discord.Member) -> None:
         print(member, 'joined', member.guild.name)
         res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='joined')
         if not res.status:
             await self.bot.bd.add({'guildid': member.guild.id, 'memberid': member.id, 'time': int(member.joined_at.timestamp())}, category='joined')
     
     @commands.Cog.listener()
-    async def on_member_remove(self, member: discord.Member):
+    async def on_member_remove(self, member: discord.Member) -> None:
         print(member, 'leaved', member.guild.name)
-        args = await self.getmarryinfo(member)
+        args = await self.bot.get_marry_info(member)
         if args is not None:
             await self.bot.bd.remove({'guildid': member.guild.id, 'memberid': member.id}, category='marry')
             await self.bot.bd.remove({'guildid': member.guild.id, 'partnerid': member.id}, category='marry')
 
     @commands.Cog.listener()
-    async def on_raw_reaction_add(self, payload: discord.raw_models.RawReactionActionEvent):
+    async def on_raw_reaction_add(self, payload: discord.raw_models.RawReactionActionEvent) -> None:
         res = await self.bot.bd.fetch({'message_id': payload.message_id}, mode='all', category='reactroles')
         try:
             for i in res.value:
@@ -156,7 +154,7 @@ class events(commands.Cog):
             pass
 
     @commands.Cog.listener()
-    async def on_raw_reaction_remove(self, payload: discord.raw_models.RawReactionActionEvent):
+    async def on_raw_reaction_remove(self, payload: discord.raw_models.RawReactionActionEvent) -> None:
         res = await self.bot.bd.fetch({'message_id': payload.message_id}, mode='all', category='reactroles')
         try:
             for i in res.value:
@@ -173,14 +171,17 @@ class events(commands.Cog):
             pass
     
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member: discord.Member, before: discord.member.VoiceState, after: discord.member.VoiceState):
+    async def on_voice_state_update(self, member: discord.Member, before: discord.member.VoiceState, after: discord.member.VoiceState) -> None:
         # <AuditLogEntry id=998929831263731784 action=AuditLogAction.member_disconnect user=<Member id=728165963480170567 name='MegaWatt_' discriminator='1114' bot=False nick=None guild=<Guild id=742394556405907457 name="Viola's house" shard_id=0 chunked=True member_count=13>>>
         again = False
         async def clearrooms(category: discord.CategoryChannel, acceptedvoicechannel: int):
             for x in category.voice_channels:
                 if len(x.members) == 0:
                     if x.id != acceptedvoicechannel:
-                        await x.delete()
+                        try:
+                            await x.delete()
+                        except discord.errors.NotFound:
+                            pass
         res = await self.bot.bd.fetch({'guildid': member.guild.id}, category='rooms')
         if res.status:
             category: discord.CategoryChannel = discord.utils.get(member.guild.categories, id=int(res.value['catid']))
@@ -221,7 +222,6 @@ class events(commands.Cog):
                     b = round(datetime.datetime.utcnow().timestamp())
                     if b - a > 25:
                         old = True
-                    print(b - a)
                     if entry.user.id != member.id:
                         if ((not old) or again) and not ((not old) and again):
                             embed = discord.Embed(title='Отключение из голосового канала.', description=f'`{entry.user.name}#{entry.user.discriminator}` отключил `{member.name}#{member.discriminator}` из канала <#{before.channel.id}>')
@@ -238,17 +238,22 @@ class events(commands.Cog):
             print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} перешёл в канал {after.channel.name} из {before.channel.name} | {before.channel.guild.name}')
 
     @commands.Cog.listener()
-    async def on_command_error(self, ctx: commands.Context, error):
+    async def on_command_error(self, ctx: commands.Context, error) -> None:
         if isinstance(error, CommandNotFound):
+            return
+        elif isinstance(error, commands.ChannelNotFound):
+            embed = ViolaEmbed(ctx=ctx, format='error')
+            embed.description = '`Такой канал не найден.`'
+            await ctx.message.reply(embed=embed)
+        elif isinstance(error, commands.NotOwner):
             return
         elif isinstance(error, MissingPermissions):
             await ctx.channel.send(embed=discord.Embed(title='Ошибка', description=f'`Вам не хватает прав для данного действия.`\n`Вам нужны права:` **{error.missing_permissions[0]}**', color=discord.Color.red()))
         elif isinstance(error, MissingRequiredArgument):
             await ctx.send(f'`Не хватает аргументов. Укажите аргумент:` **{error.param}**')
         elif isinstance(error, MemberNotFound):
-            embed = discord.Embed(color=discord.Color.red())
-            embed.title = 'Ошибка.'
-            embed.description = 'Участник не найден.'
+            embed = ViolaEmbed(ctx=ctx, format='error')
+            embed.description = '`Такой участник не найден.`'
             await ctx.message.reply(embed=embed)
         elif isinstance(error, CommandDisabled):
             await ctx.message.reply(error)
@@ -256,11 +261,11 @@ class events(commands.Cog):
             raise error
     
     @commands.Cog.listener()
-    async def on_interaction(self, interaction: discord.Interaction):
+    async def on_interaction(self, interaction: discord.Interaction) -> None:
         pass
 
     @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
+    async def on_message(self, message: discord.Message) -> None:
         if not message.author.bot:
             ctx = await self.bot.get_context(message)
             if not message.guild:
@@ -296,10 +301,17 @@ class events(commands.Cog):
                 msgs = res.value['amount']
                 level2 = self.bot.GetLevel(msgs)
                 if level1 < level2:
-                    await message.reply(f'Ура! {message.author.mention} только что поднял свой уровень до **{level2[0]}**!')
+                    res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, category='system')
+                    if res.status:
+                        channel = self.bot.get_channel(int(res.value['channelid']))
+                        try:
+                            return await channel.send(f'{message.author.mention} поднял свой уровень до **{level2[0]}**!')
+                        except Exception:
+                            return await message.reply(f'{message.author.mention} поднял свой уровень до **{level2[0]}**!')
+                    await message.reply(f'{message.author.mention} поднял свой уровень до **{level2[0]}**!')
 
     @commands.Cog.listener()
-    async def on_message_delete(self, message: discord.Message):
+    async def on_message_delete(self, message: discord.Message) -> None:
         if message.author.bot:
             return
         res = await self.bot.bd.fetch({'guildid': message.guild.id}, category='logs')
@@ -337,7 +349,7 @@ class events(commands.Cog):
                         await channel.send(f':x: `[{datetime.datetime.now().strftime("%H:%M:%S")}]` Cообщение от **{message.author.name}**#{message.author.discriminator} удалено в канале <#{message.channel.id}>', embed=embed) 
 
     @commands.Cog.listener()
-    async def on_message_edit(self, before: discord.message.Message, after: discord.message.Message):
+    async def on_message_edit(self, before: discord.message.Message, after: discord.message.Message) -> None:
         if before.author.bot:
             return
         try:
@@ -358,5 +370,5 @@ class events(commands.Cog):
                         await channel.send(f'`[{datetime.datetime.now().strftime("%H:%M:%S")}]` **{before.author.name}**#{before.author.discriminator} Изменил свое сообщение в канале <#{before.channel.id}>', embed=embed)
         except Exception:
             pass
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(events(bot))
