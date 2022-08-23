@@ -1,31 +1,45 @@
 import traceback, os, io
-import discord, lavalink, asyncio, aiohttp
+import discord, asyncio, aiohttp
 import datetime
 from typing import Optional, Dict, Any, List, Union
 from discord.ext import commands
 from Config.utils import Paginator
 from Config.assets.database import MongoDB
+from Config.components import TicketButtons, TicketClose, RoomActions, ViolaEmbed
 from PIL import Image, ImageFont, ImageDraw
 
 class Viola(commands.Bot):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.bd = MongoDB()
+        self.bd = MongoDB() # database connection
+        self.session: aiohttp.ClientSession = None # filled in setup_hook
         print('-------------------------------------------')
         print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] [Viola/INFO]: Connected to database successfully.')
-        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
     
     async def sync(self) -> None:
         # guild = discord.Object(id=1000466637478178910)
         # self.tree.copy_global_to(guild=guild)
         await self.tree.sync() # guild=guild
+
+    async def setup_hook(self) -> None:
+        persistents = [TicketButtons(), TicketClose(), RoomActions()]
+        for i in persistents:
+            self.add_view(i)
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
+        for filename in os.listdir(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Config', ''), 'Cogs')):
+            if filename.endswith(".py"):
+                await self.load_extension(f"Cogs.{filename[:-3]}")
     
-    async def getLogChannel(self, guildid) -> Optional[discord.TextChannel]:
+    async def get_log_channel(self, guildid: int) -> Optional[discord.TextChannel]:
         res = await self.bd.fetch({'guildid': guildid}, category='logs')
         if res.status:
             value = res.value
-            channel: discord.TextChannel = self.get_channel(int(value['channel_id']))
-            return channel
+            return self.get_channel(int(value['channel_id']))
+    
+    async def get_voicestats_channel(self, guildid: int) -> Optional[discord.VoiceChannel]:
+        res = await self.bd.fetch({'guildid': guildid}, category='voicemembers')
+        if res.status:
+            return self.get_channel(int(res.value['voiceid']))
     
     def format_time(self, seconds: Union[int, float]) -> str:
         m, s = divmod(int(seconds), 60)
@@ -50,8 +64,8 @@ class Viola(commands.Bot):
             avatar_url = 'https://raw.githubusercontent.com/AdvertiseYourServer/Default-Discord-Avatars/master/4.png'
         else:
             avatar_url = member.avatar.url
-        im = Image.open(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'image.png')).convert('RGBA')
-        mainfont = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'DejaVuSans.ttf'), size=25)
+        im = Image.open(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets', 'image.png')).convert('RGBA')
+        mainfont = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets', 'welcome_font.ttf'), size=25)
         async with self.session.get(avatar_url) as response:
             avatar = Image.open(io.BytesIO(await response.content.read())).resize((170, 170), 0).convert('RGBA')
             mask_im = Image.new("L", avatar.size, 0)
@@ -66,7 +80,7 @@ class Viola(commands.Bot):
                 imgforfont= im.crop((210, 0, 750, 250))
             def set_size(fontsize: int) -> Image.Image:
                 tmp=globals.imgforfont.copy()
-                font = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'DejaVuSans.ttf'), size=fontsize)
+                font = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets', 'welcome_font.ttf'), size=fontsize)
                 imdraw = ImageDraw.Draw(tmp)
                 imdraw.text(text=f'{member.display_name}#{member.discriminator}', xy=(8, 115), font=font)
                 pixels = tmp.load()
@@ -89,6 +103,15 @@ class Viola(commands.Bot):
             im.save(image_bytes, format='PNG')
             image_bytes.seek(0)
             return discord.File(image_bytes, filename=f'WelcomeScreen.png')
+    
+    async def get_all_voice_members(self) -> List[discord.Member]:
+        members = []
+        for g in self.guilds:
+            for c in g.voice_channels:
+                for m in c.members:
+                    if not m.bot:   
+                        members.append(m)
+        return members
     
     def GetLevel(self, amount: int) -> List[int]:
         amount += 1
@@ -138,44 +161,11 @@ class Viola(commands.Bot):
             next = 1000 + additional
         return [level, next]
 
-class ViolaEmbed(discord.Embed):
-    def __init__(self, **kwargs):
-        self.format = kwargs.pop('format') if 'format' in kwargs else 'success'
-        self.ctx = kwargs.pop('ctx') if 'ctx' in kwargs else None
-        if not isinstance(self.ctx, commands.Context) and self.ctx is not None:
-            raise discord.errors.ClientException('ctx not context')
-        super().__init__(**kwargs)
-        if self.ctx:
-            try:
-                self.set_footer(text=f'{self.ctx.guild.name}', icon_url=f'{self.ctx.guild.icon.url}')
-            except Exception:
-                self.set_footer(text=f'{self.ctx.guild.name}', icon_url=f'{self.ctx.bot.user.avatar.url}')
-            try:
-                self.set_thumbnail(url=f'{self.ctx.guild.icon.url}')
-            except Exception:
-                self.set_thumbnail(url=self.ctx.bot.user.avatar.url)
-        colors = {'success': discord.Color.green(), 'warning': discord.Color.yellow(), 'error': discord.Color.red()}
-        titles = {'success': 'Успешно.', 'warning': 'Внимание.', 'error': 'Ошибка.'}
-        urls = {
-            'success': 'https://cdn.discordapp.com/emojis/1006317088253681734.webp',
-            'warning': 'https://cdn.discordapp.com/emojis/1006317089683951718.webp',
-            'error': 'https://cdn.discordapp.com/emojis/1006317086471094302.webp'
-        }
-        self.set_author(icon_url=urls[self.format], name=titles[self.format])
-        self.color = colors[self.format]
-
-class CommandDisabled(commands.CommandError):
-    """
-    Exception that being raised while user running disabled command
-    
-    """
-    pass
-
 class ViolaHelp(commands.HelpCommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
     
-    async def send_bot_help(self, mapping: Dict[Any, Any]):
+    async def send_bot_help(self, mapping: Dict[Any, Any]) -> None:
         async with self.context.channel.typing():
             embeds = []
             for i, j in enumerate(mapping.keys()):
@@ -199,34 +189,12 @@ class ViolaHelp(commands.HelpCommand):
                 embeds.append(embed)
             await self.context.channel.send(embed=embeds[0], view=Paginator(embeds=embeds, ctx=self.context, bot=self.context.bot))
        
-    async def send_command_help(self, command: commands.Command):
+    async def send_command_help(self, command: commands.Command) -> None:
         embed = ViolaEmbed(ctx=self.context)
         embed.color = discord.Color.dark_gray()
         embed.title = f'Команда {command.name}'
         embed.description = command.description
         await self.context.send(embed=embed)
     
-    async def command_not_found(self, command):
+    async def command_not_found(self, command) -> None:
         return f'Команда {command} не найдена.'
-
-class LavalinkVoiceClient(discord.VoiceClient):
-    def __init__(self, client: Viola, channel: discord.abc.Connectable):
-        self.client = client
-        self.channel = channel
-        self.lavalink: lavalink.Client = self.client.lavalink
-    async def on_voice_server_update(self, data):
-        lavalink_data = {'t': 'VOICE_SERVER_UPDATE', 'd': data}
-        await self.lavalink.voice_update_handler(lavalink_data)
-    async def on_voice_state_update(self, data):
-        lavalink_data = {'t': 'VOICE_STATE_UPDATE', 'd': data}
-        await self.lavalink.voice_update_handler(lavalink_data)
-    async def connect(self, *, timeout: float, reconnect: bool, self_deaf: bool = False, self_mute: bool = False) -> None:
-        self.lavalink.player_manager.create(guild_id=self.channel.guild.id)
-        await self.channel.guild.change_voice_state(channel=self.channel, self_mute=self_mute, self_deaf=self_deaf)
-    async def disconnect(self, *, force: bool = False) -> None:
-        player: lavalink.DefaultPlayer = self.lavalink.player_manager.get(self.channel.guild.id)
-        if not force and not player.is_connected:
-            return
-        await self.channel.guild.change_voice_state(channel=None)
-        player.channel_id = None
-        self.cleanup()

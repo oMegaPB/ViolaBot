@@ -1,124 +1,53 @@
 import discord, requests, json, datetime, os, asyncio, traceback
 from discord.ext import commands, tasks
 from typing import List, Dict, Any, Optional
-from discord.ext.commands.errors import CommandNotFound, MemberNotFound
+from discord.ext.commands.errors import CommandNotFound, MemberNotFound, DisabledCommand
 from discord.ext.commands import has_permissions, MissingPermissions, MissingRequiredArgument
-from Config.components import TicketButtons, TicketClose, RoomActions
-from Config.core import Viola, CommandDisabled, ViolaEmbed
+from Config.components import ViolaEmbed
+from Config.core import Viola
 
 class events(commands.Cog):
     def __init__(self, bot: Viola) -> None:
         self.bot = bot
-        self.entrys = []
-        self.buffer: List[dict] = [] # buffer for next voicetime database update
-    
-    async def renew_interactions(self) -> None:
-        all = await self.bot.bd.rows(mode='list', category='tickets')
-        for i in all.value:
-            try:
-                id = int(i['channel_id'])
-                channel = self.bot.get_channel(id)
-                if channel is not None:
-                    embed = discord.Embed(color=discord.Color.green())
-                    embed.set_author(name='Tickets.', icon_url='https://w7.pngwing.com/pngs/680/355/png-transparent-icon-e-mail-e-mail-mail.png')
-                    embed.description = '`Чтобы создать тикет нажмите на кнопку ниже.`'
-                    try:
-                        embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{channel.guild.icon.url}')
-                    except Exception:
-                        embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
-                    async for message in channel.history(limit=1, oldest_first=True):
-                        try:
-                            await message.edit(embed=embed, view=TicketButtons())
-                        except (discord.errors.Forbidden, Exception):
-                            pass
-            except BaseException as e:
-                print(e, 'renew 1')
-        all = await self.bot.bd.rows(mode='list', category='ticketusers')
-        try:
-            for i in all.value:
-                channel = self.bot.get_channel(i['channelid'])
-                async for message in channel.history(limit=1, oldest_first=True):
-                    try:
-                        await message.edit(view=TicketClose())
-                    except discord.errors.Forbidden:
-                        pass
-        except BaseException as e:
-            print(e, 'renew 2')
-        all = await self.bot.bd.rows(mode='list', category='rooms')
-        try:
-            for i in all.value:
-                channel = self.bot.get_channel(int(i['textid']))
-                async for message in channel.history(limit=1, oldest_first=True):
-                    try:
-                        embed=ViolaEmbed(ctx=await self.bot.get_context(message))
-                        embed.title = 'Приватные комнаты.'
-                        description = f'`👪 Изменить лимит канала`\t`🚮 Забрать/Выдать доступ`\n`💁‍♂️ Передать владельца`\t`🚪 Скрыть/Открыть комнату`\n`📝 Изменить название`\t`🎙️ заглушить/разглушить кого-то`'
-                        embed.description = description
-                        if message.content == '' or not message.content:
-                            await message.edit(embed=embed, view=RoomActions())
-                        else:
-                            await message.edit(content='', embed=embed, view=RoomActions())
-                    except discord.errors.Forbidden:
-                        pass
-        except BaseException as e:
-            print(e, 'renew 3')
-    
-    @tasks.loop(seconds=250)
-    async def update_VoiceChannel_members(self) -> None:
-        all = await self.bot.bd.rows(mode='list', category='voicemembers')
-        for i in all.value:
-            channel = self.bot.get_channel(int(i['voiceid']))
-            guild = self.bot.get_guild(int(i['guildid']))
-            try:
-                await channel.edit(name=f"Участников: {guild.member_count}")
-            except Exception:
-                pass
-            await asyncio.sleep(3)
-    
-    async def _get_all_voice_members(self) -> List[discord.Member]:
-        members = []
-        for g in self.bot.guilds:
-            for c in g.voice_channels:
-                for m in c.members:
-                    if not m.bot:   
-                        members.append(m)
-        return members
+        self.entrys = [] # audit log entrys for channel disconnect purposes
+        self.buffer: List[Dict[str, Any]] = [] # buffer for next voicetime database update
     
     @tasks.loop(seconds=1)
-    async def update_VoiceTime_info(self) -> None:
+    async def update_buffer(self) -> None:
         for x in self.buffer:
-            members = await self._get_all_voice_members()
             prevamount = x['amount'] + 1
             self.buffer.remove(x)
-            for y in members:
+            for y in await self.bot.get_all_voice_members():
                 if x['memberid'] == y.id:
                     self.buffer.append({'memberid': x['memberid'], 'guildid': x['guildid'], 'amount': prevamount})
     
     @tasks.loop(seconds=15)
-    async def update_VoiceTime_Database(self) -> None:
-        count = 0
-        for x in self.buffer:
+    async def update_db_from_buffer(self) -> None:
+        for j, x in enumerate(self.buffer):
             res = await self.bot.bd.fetch({'guildid': x['guildid'], 'memberid': x['memberid']}, category='voice')
-            self.buffer.pop(count)
+            self.buffer.pop(j)
             self.buffer.append({'memberid': x['memberid'], 'guildid': x['guildid'], 'amount': 0})
             if res.status:
                 amount = res.value['amount'] + x['amount']
                 await self.bot.bd.remove({'guildid': x['guildid'], 'memberid': x['memberid']}, category='voice')
-                await self.bot.bd.add({'guildid': x['guildid'], 'memberid': x['memberid'], 'amount': amount}, category='voice')
-            count += 1   
+                await self.bot.bd.add({'guildid': x['guildid'], 'memberid': x['memberid'], 'amount': amount}, category='voice') 
     
     async def start_all_tasks(self) -> None:
-        await self.bot.load_extension("Cogs.music")
-        for x in await self._get_all_voice_members():
+        for x in await self.bot.get_all_voice_members():
             self.buffer.append({'memberid': x.id, 'guildid': x.guild.id, 'amount': 0})
-        self.update_VoiceChannel_members.start()
-        self.update_VoiceTime_info.start()
-        self.update_VoiceTime_Database.start()
-        await self.renew_interactions()
+        self.update_buffer.start()
+        self.update_db_from_buffer.start()
+
+    @commands.Cog.listener()
+    async def on_socket_raw_send(self, payload: str):
+        return
+    
+    @commands.Cog.listener()
+    async def on_socket_raw_receive(self, payload: str):
+        return
     
     @commands.Cog.listener()
     async def on_ready(self) -> None:
-        # await self.bot.sync()
         await self.start_all_tasks()
         print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{self.bot.user.name}/INFO]: Logged in as {self.bot.user.name}.")
         print('-------------------------------------------')
@@ -129,6 +58,10 @@ class events(commands.Cog):
         res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='joined')
         if not res.status:
             await self.bot.bd.add({'guildid': member.guild.id, 'memberid': member.id, 'time': int(member.joined_at.timestamp())}, category='joined')
+        channel = await self.bot.get_voicestats_channel(member.guild.id)
+        if channel is not None:
+            await channel.edit(name=f"Участников: {member.guild.member_count}")
+
     
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member) -> None:
@@ -137,6 +70,9 @@ class events(commands.Cog):
         if args is not None:
             await self.bot.bd.remove({'guildid': member.guild.id, 'memberid': member.id}, category='marry')
             await self.bot.bd.remove({'guildid': member.guild.id, 'partnerid': member.id}, category='marry')
+        channel = await self.bot.get_voicestats_channel(member.guild.id)
+        if channel is not None:
+            await channel.edit(name=f"Участников: {member.guild.member_count}")
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.raw_models.RawReactionActionEvent) -> None:
@@ -156,19 +92,15 @@ class events(commands.Cog):
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload: discord.raw_models.RawReactionActionEvent) -> None:
         res = await self.bot.bd.fetch({'message_id': payload.message_id}, mode='all', category='reactroles')
-        try:
-            for i in res.value:
-                if i['reaction'] == payload.emoji.name and i['channel_id'] == payload.channel_id:
-                    role = discord.utils.get(self.bot.get_guild(payload.guild_id).roles, id=int(i['role_id']))
-                    try:
-                        guild = self.bot.get_guild(payload.guild_id)
-                        member = guild.get_member(payload.user_id)
-                        await member.remove_roles(role, reason='Роли за реакцию.')
-                    except discord.errors.Forbidden:
-                        return
-                await asyncio.sleep(1)
-        except Exception:
-            pass
+        for i in res.value:
+            if i['reaction'] == payload.emoji.name and i['channel_id'] == payload.channel_id:
+                role = discord.utils.get(self.bot.get_guild(payload.guild_id).roles, id=int(i['role_id']))
+                try:
+                    guild = self.bot.get_guild(payload.guild_id)
+                    member = guild.get_member(payload.user_id)
+                    await member.remove_roles(role, reason='Роли за реакцию.')
+                except discord.errors.Forbidden:
+                    return
     
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.member.VoiceState, after: discord.member.VoiceState) -> None:
@@ -231,11 +163,9 @@ class events(commands.Cog):
                             except Exception:
                                 embed.set_footer(text=f'{member.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
                             await channel.send(embed=embed)
-                return
         elif before.channel is not None and after.channel is not None:
-            if before.channel.name == after.channel.name:
-                return
-            print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} перешёл в канал {after.channel.name} из {before.channel.name} | {before.channel.guild.name}')
+            if before.channel.name != after.channel.name:
+                print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] {member.name} перешёл в канал {after.channel.name} из {before.channel.name} | {before.channel.guild.name}')
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error) -> None:
@@ -255,14 +185,14 @@ class events(commands.Cog):
             embed = ViolaEmbed(ctx=ctx, format='error')
             embed.description = '`Такой участник не найден.`'
             await ctx.message.reply(embed=embed)
-        elif isinstance(error, CommandDisabled):
+        elif isinstance(error, DisabledCommand):
             await ctx.message.reply(error)
         else:
             raise error
     
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction) -> None:
-        pass
+        return
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:

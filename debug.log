@@ -1,0 +1,16 @@
+[21:38:11] Sent GET with status 200 to https://discord.com/api/v10/users/@me
+[21:38:12] Sent GET with status 200 to https://discord.com/api/v10/oauth2/applications/@me
+[21:38:12] Sent GET with status 101 to wss://gateway.discord.gg/?v=10&encoding=json&compress=zlib-stream
+[22:26:13] Sent GET with status 200 to https://discord.com/api/v10/users/@me
+[22:26:13] Sent GET with status 200 to https://discord.com/api/v10/oauth2/applications/@me
+[22:26:14] Sent GET with status 101 to wss://gateway.discord.gg/?v=10&encoding=json&compress=zlib-stream
+[22:30:45] Sent GET with status 200 to https://discord.com/api/v10/users/@me
+[22:30:45] Sent GET with status 200 to https://discord.com/api/v10/oauth2/applications/@me
+[22:30:46] Sent GET with status 101 to wss://gateway.discord.gg/?v=10&encoding=json&compress=zlib-stream
+[22:32:29] Sent GET with status 200 to https://discord.com/api/v10/guilds/506049013460631552/audit-logs
+[22:33:29] Sent GET with status 200 to https://discord.com/api/v10/users/@me
+[22:33:29] Sent GET with status 200 to https://discord.com/api/v10/oauth2/applications/@me
+[22:33:30] Sent GET with status 101 to wss://gateway.discord.gg/?v=10&encoding=json&compress=zlib-stream
+[22:34:17] Sent GET with status 200 to https://discord.com/api/v10/users/@me
+[22:34:17] Sent GET with status 200 to https://discord.com/api/v10/oauth2/applications/@me
+[22:34:17] Sent GET with status 101 to wss://gateway.discord.gg/?v=10&encoding=json&compress=zlib-stream

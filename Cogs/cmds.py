@@ -1,12 +1,12 @@
-import discord, requests, json, datetime, os, asyncio, random, traceback, io, magic, re, time
+import discord, aiohttp, datetime, os, asyncio, random, traceback, io, magic, re, time
 from discord.ext import commands
-from Config.utils import YT, ACRcloud
+from Config.utils import YT, ACRcloud, HerokuRecognizer
 from typing import List
 from discord.ext.commands import has_permissions
-from Config.components import Reactions, SetInfo, Logs, TicketButtons, RoomsCallback, RoomActions
+from Config.components import Reactions, SetInfo, Logs, TicketButtons, RoomsCallback, ViolaEmbed
 from Config.utils import Paginator
 from discord import app_commands
-from Config.core import Viola, ViolaEmbed
+from Config.core import Viola
 from discord.http import Route
 # -----------------------------------------------------------------------------------------------------------
 class cmds(commands.Cog, description='**Основные команды бота.**'):
@@ -16,60 +16,50 @@ class cmds(commands.Cog, description='**Основные команды бота
     @commands.command(description="Прикрепите отрывок песни или целую песню, введите эту команду и бот попытается угадать ее название, исполнителя и показать ютуб статистику.")
     async def recognize(self, ctx: commands.Context):
         async with ctx.channel.typing():
-            embed=ViolaEmbed(ctx=ctx, format='warning')
-            embed.description = 'Ожидайте...'
-            mess = await ctx.channel.send(embed=embed)
-            if len(ctx.message.attachments) > 1:
-                await ctx.message.reply('`Вы можете прикрепить только один файл.`')
-                return
-            elif len(ctx.message.attachments) == 0:
-                await ctx.message.reply('`Прикрепите хотя бы один файл.`')
-                return
-            a = await ctx.message.attachments[0].read()
-            with io.BytesIO(a) as audio_data:
-                accepted = ['Audio file with ID3', 'Ogg data', 'WAVE audio']
-                typo = magic.from_buffer(audio_data.read())
-                if not (accepted[0] in typo or accepted[1] in typo or accepted[2] in typo or accepted[3] in typo):
-                    embed = ViolaEmbed(ctx=ctx, format='error')
-                    embed.description = f'`Формат файла не поддерживается.`\n(**{typo}**)\n`Поддерживаемые файлы: .ogg .wav .mp3`'
-                    try:
-                        await mess.edit(embed=embed)
-                    except discord.errors.NotFound:
-                        await ctx.channel.send(embed=embed)
-                    return
-            with io.BytesIO(a) as audio_data:
-                try:
-                    song = await ACRcloud().recognize(audio_bytes=audio_data.read(2**20))
-                    if not song:
+            try:
+                if len(ctx.message.attachments) > 1:
+                    return await ctx.message.reply('`Вы можете прикрепить только один файл.`')
+                elif len(ctx.message.attachments) == 0:
+                    return await ctx.message.reply('`Прикрепите хотя бы один файл.`')
+                embed=ViolaEmbed(ctx=ctx, format='warning')
+                embed.description = 'Ожидайте...'
+                mess = await ctx.channel.send(embed=embed)
+                a = await ctx.message.attachments[0].read()
+                with io.BytesIO(a) as audio_data:
+                    accepted = ['Audio file with ID3', 'Ogg data', 'WAVE audio', 'MPEG ADTS']
+                    typo = magic.from_buffer(audio_data.read())
+                    if not (accepted[0] in typo or accepted[1] in typo or accepted[2] in typo or accepted[3] in typo):
                         embed = ViolaEmbed(ctx=ctx, format='error')
-                        embed.description = '`Совпадений для выбранного фрагмента не найдено.`'
+                        embed.description = f'`Формат файла не поддерживается.`\n(**{typo}**)\n`Поддерживаемые файлы: .ogg .wav .mp3 .adts`'
                         try:
                             await mess.edit(embed=embed)
                         except discord.errors.NotFound:
                             await ctx.channel.send(embed=embed)
                         return
-                    yt = await YT.getYT(f'{song.title} - {song.author}')
+                with io.BytesIO(a) as audio_data:
+                    # song = await ACRcloud().recognize(audio_bytes=audio_data.read(2**20))
+                    executor = HerokuRecognizer()
+                    song = await executor.recognize_API(music_bytes=audio_data.read(2**20))
+                    if not song:
+                        embed = ViolaEmbed(ctx=ctx, format='error')
+                        embed.description = '`Совпадений для выбранного фрагмента не найдено.`'
+                        try:
+                            return await mess.edit(embed=embed)
+                        except discord.errors.NotFound:
+                            return await ctx.channel.send(embed=embed)
+                    yt = YT()
+                    yt = await yt.getYT(f'{song.title} - {song.author}')
                     embed = ViolaEmbed(ctx=ctx)
                     embed.set_thumbnail(url=song.thumbnail_url)
                     description = f'`Найдено совпадение:`\n`Название:` **{song.title}**\n`Исполнитель:` **{song.author}**'
                     description += f'\n\n**YT search:**\n`Ссылка на видео:` [{yt.title}](https://www.youtube.com/watch?v={yt.identifier})\n`Ссылка на канал:` [{yt.author}]({yt.author_url})\n`Длительность:` {yt.duration}\n`Просмотры:` {yt.view_count}'
                     embed.description = description
                     try:
-                        await mess.edit(embed=embed)
+                        return await mess.edit(embed=embed)
                     except discord.errors.NotFound:
-                        await ctx.channel.send(embed=embed)
-                    return
-                except Exception as e:
-                    if isinstance(e, KeyError):
-                        try:
-                            await ctx.message.reply('`Совпадений не найдено.`')
-                        except discord.errors.NotFound:
-                            await ctx.channel.send('`Совпадений не найдено.`')
-                    else:
-                        try:
-                            await ctx.message.reply(f'`{e}\n{type(e)}`')
-                        except discord.errors.NotFound:
-                            await ctx.channel.send(f'`{e}\n{type(e)}`')
+                        return await ctx.channel.send(embed=embed)
+            except Exception as e:
+                await ctx.channel.send(f'`{e}`, {type(e)}')
     
     @commands.command(description="Вспомогательная утилита.\nУдаляет дискорд вебхуки.\nПример: `s!webhookdel https://discord.com/api/webhooks/\n1007626877843812362/j_O-_9JiaC7JTiAquW15\nvZb8PaO0mLlujEplsgwVnM3710O\nUBEePhToo1c-UJVcnvpcV`")
     async def webhookdel(self, ctx: commands.Context, url):
@@ -461,6 +451,7 @@ class cmds(commands.Cog, description='**Основные команды бота
             if member.avatar:
                 if member.avatar.is_animated():
                     animated = True
+            # for some reson member.banner isnt working here
             banner = await self.bot.http.request(Route('GET', f'/users/{member.id}'))
             banner = banner['banner']
             description += '`Имеет премиум подписку.`<:nitro:1009420900535386122>\n' if member.premium_since or animated or banner else ""
@@ -601,32 +592,31 @@ class cmds(commands.Cog, description='**Основные команды бота
             id = int(str(args[1]).replace('<#', '').replace('>', ''))
             channel = self.bot.get_channel(id)
             if not channel.guild.id == ctx.guild.id:
-                await ctx.send(f'`Канал не найден`')
-                return
+                return await ctx.send(f'`Канал не найден`')
             await channel.delete()
             a = await self.bot.bd.remove({'voiceid': id}, category='voicemembers')
             guild = self.bot.get_guild(int(channel.guild.id))
             if a.value > 0:
-                await ctx.send(f'<#{channel.id}> `Убран из каналов статистики на сервере` **{guild.name}**')
+                return await ctx.send(f'<#{channel.id}> `Убран из каналов статистики на сервере` **{guild.name}**')
             else:
-                await ctx.send(f'`Канал не найден`')
-            return
+                return await ctx.send(f'`Канал не найден`')
         elif args[0] == 'add':
             id = int(str(args[1]).replace('<#', '').replace('>', ''))
             channel = self.bot.get_channel(id)
             if channel is not None:
-                res = await self.bot.bd.remove({'guildid': channel.guild.id}, category='voicemembers')
-                await self.bot.bd.add({'guildid': channel.guild.id, 'voiceid': id}, category='voicemembers')
-                if res.value == 0:
-                    await ctx.send(f'`Канал успешно добавлен. Канал:` <#{channel.id}>')
-                    guild = self.bot.get_guild(int(channel.guild.id))
-                    await channel.edit(name=f"Участников: {guild.member_count}")
-                    return
+                if channel.type is discord.ChannelType.voice:
+                    res = await self.bot.bd.remove({'guildid': channel.guild.id}, category='voicemembers')
+                    await self.bot.bd.add({'guildid': channel.guild.id, 'voiceid': id}, category='voicemembers')
+                    if res.value == 0:
+                        await ctx.send(f'`Канал успешно добавлен. Канал:` <#{channel.id}>')
+                        guild = self.bot.get_guild(int(channel.guild.id))
+                        return await channel.edit(name=f"Участников: {guild.member_count}")
+                    else:
+                        await ctx.send(f'`Канал успешно обновлен. Канал:` <#{channel.id}>')
+                        guild = self.bot.get_guild(int(channel.guild.id))
+                        return await channel.edit(name=f"Участников: {guild.member_count}")
                 else:
-                    await ctx.send(f'`Канал успешно обновлен. Канал:` <#{channel.id}>')
-                    guild = self.bot.get_guild(int(channel.guild.id))
-                    await channel.edit(name=f"Участников: {guild.member_count}")
-                    return
+                    await ctx.send(f'`Канал должен быть голосовым каналом.`')
             else:
                 await ctx.send(f'`Канал не найден.`')
     
@@ -641,7 +631,7 @@ class cmds(commands.Cog, description='**Основные команды бота
             await ctx.channel.send(f'Удалено {len(deleted)} сообщений.')
         else:
             member = ctx.guild.get_member(int(user[0].replace('<@', '').replace('>', '')))
-            def check(m: discord.Member):
+            def check(m: discord.Message):
                 return m.author == member
             deleted = await ctx.channel.purge(limit=int(limit), check=check)
             await ctx.channel.send(f'Удалено {len(deleted)} сообщений от пользователя <@!{member.id}>')

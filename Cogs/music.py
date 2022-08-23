@@ -3,8 +3,8 @@ import traceback
 import discord, asyncio
 import lavalink
 from discord.ext import commands
-from Config.components import Music as msc, MusicActions
-from Config.core import LavalinkVoiceClient, Viola
+from Config.components import Music as msc, MusicActions, LavalinkVoiceClient
+from Config.core import Viola
 
 url_rx = re.compile(r'https?://(?:www\.)?.+')
 
