@@ -243,7 +243,7 @@ class Hypixel(commands.Cog, description='Hypixel related commands.'):
             await ctx.send(embed=embed)
     # --------------------------------------------------------------------------------------------------
     class Stats:
-        path = str(os.path.dirname(os.path.realpath(__file__))).replace('/Config', '')
+        path = str(os.getcwd()).replace('/Config', '')
         def __init__(self, username):
             self._response, self._friends, self._guild, self.kd, self.tss = None, None, None, [['-', '-', '-', '-', '-', '-'], ['-', '-', '-', '-', '-', '-'], ['-', '-', '-', '-', '-', '-'], ['-', '-', '-', '-', '-', '-'], ['-', '-', '-', '-', '-', '-'], ['-', '-', '-', '-', '-', '-'], ['-', '-', '-', '-', '-', '-']], []
             try:
@@ -495,10 +495,10 @@ class Hypixel(commands.Cog, description='Hypixel related commands.'):
             Vip = '#66ff00'
             img_color = '#242424'
             img = Image.new('RGB', (1200, 1550), color=img_color)
-            font = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'shrift.ttf'), size=75)
-            font2 = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'shrift.ttf'), size=60)
-            font3 = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'shrift.ttf'), size=45)
-            mainfont = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Cogs', ''), 'Config', 'assets', 'main.ttf'), size=35)
+            font = ImageFont.truetype(os.path.join(os.getcwd().replace('Cogs', ''), 'Config', 'assets', 'shrift.ttf'), size=75)
+            font2 = ImageFont.truetype(os.path.join(os.getcwd().replace('Cogs', ''), 'Config', 'assets', 'shrift.ttf'), size=60)
+            font3 = ImageFont.truetype(os.path.join(os.getcwd().replace('Cogs', ''), 'Config', 'assets', 'shrift.ttf'), size=45)
+            mainfont = ImageFont.truetype(os.path.join(os.getcwd().replace('Cogs', ''), 'Config', 'assets', 'main.ttf'), size=35)
             draw_text = ImageDraw.Draw(img)
             # =---------------------------------------------------------------------------------------------------------------------------
             colors = {'BLACK':'#000000', 'DARK_BLUE':'#1619ff', 'DARK_GREEN':'#026340', 'DARK_AQUA':'#0acdde', 'DARK_RED':'#ab1d0b', 'DARK_PURPLE':'#9400d3', 'GOLD':'#ffd700', 'GRAY':'#808080', 'DARK_GRAY':'#45433b', 'BLUE':'#1b98f7', 'GREEN':'#00e600', 'AQUA':'#008cf0', 'RED':'#ff0000', 'YELLOW':'#fffe06', 'WHITE':'#ffffff', 'LIGHT_PURPLE':'#9d81ba'}

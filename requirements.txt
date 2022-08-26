@@ -10,3 +10,4 @@ lavalink==3.1.7
 beautifulsoup4==4.11.1
 python-magic==0.4.27
 lxml==4.9.1
+pandas==1.4.3

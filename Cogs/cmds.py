@@ -1,9 +1,10 @@
-import discord, aiohttp, datetime, os, asyncio, random, traceback, io, magic, re, time
+import discord, aiohttp, datetime, os, asyncio, random, traceback, io, magic, re, time, pandas
 from discord.ext import commands
+from contextlib import suppress
 from Config.utils import YT, ACRcloud, HerokuRecognizer
 from typing import List
 from discord.ext.commands import has_permissions
-from Config.components import Reactions, SetInfo, Logs, TicketButtons, RoomsCallback, ViolaEmbed
+from Config.components import SetInfo, ViolaEmbed, OnSettings
 from Config.utils import Paginator
 from discord import app_commands
 from Config.core import Viola
@@ -192,14 +193,6 @@ class cmds(commands.Cog, description='**Основные команды бота
                     await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0])
             except Exception:
                 print(traceback.format_exc())
-
-    @commands.command(description='Утилита.\nОтслеживайте изменённые/удаленные сообщения, отключения из голосовых каналов и другие события сервера.')
-    @has_permissions(administrator=True)
-    async def logs(self, ctx: commands.Context):
-        embed = ViolaEmbed(ctx=ctx)
-        embed.title = 'Система логирования'
-        embed.description = '`Выберите дествие:`'
-        await ctx.send(embed=embed, view=Logs(bot=self.bot, ctx=ctx))
     
     @commands.command(description='Благодаря этой команде вы можете вступить в брак с кем нибудь!\nПример: `s!marry @партнер`')
     async def marry(self, ctx: commands.Context, member: discord.Member = None):
@@ -496,15 +489,17 @@ class cmds(commands.Cog, description='**Основные команды бота
     async def setinfo(self, ctx: commands.Context) -> None:
         async with ctx.channel.typing():
             embed = ViolaEmbed(ctx=ctx)
-            embed.description = '>>> Выберите действие,\nкоторое вам нужно:'
+            embed.description = '>>> Выберите действие,\nКоторое вам нужно:'
             await ctx.channel.send(embed=embed, view=SetInfo(ctx=ctx))
     
     @commands.command(description="Отключает команду на этом сервере. Пример: `s!disable marry`\n(с отключенными командами нельзя взаимодействовать.)")
     @has_permissions(administrator=True)
     async def disable(self, ctx: commands.Context, command) -> None:
         if command == 'disable' or command == 'enable':
-            await ctx.message.reply('Вы не можете отключать эти команды!')
-            return
+            return await ctx.message.reply('Вы не можете отключать эти команды!')
+        if command == 'levelling':
+            await self.bot.bd.add({'guildid': ctx.guild.id}, category='levelling')
+            return await ctx.send('disabled')
         for x in self.bot.commands:
             if str(x.name) == str(command):
                 res = await self.bot.bd.fetch({'guildid': ctx.guild.id, 'commandname': str(x.name)}, category='disabledcmds')
@@ -517,6 +512,9 @@ class cmds(commands.Cog, description='**Основные команды бота
     @commands.command(description='Если команда была отключена, то включает ее назад. (с отключенными командами взаимодействовать нельзя)')
     @has_permissions(administrator=True)
     async def enable(self, ctx: commands.Context, command) -> None:
+        if command == 'levelling':
+            await self.bot.bd.remove({'guildid': ctx.guild.id}, category='levelling')
+            return await ctx.send('disabled')
         for x in self.bot.commands:
             if str(x.name) == str(command):
                 res = await self.bot.bd.fetch({'guildid': ctx.guild.id, 'commandname': str(x.name)}, category='disabledcmds')
@@ -525,14 +523,6 @@ class cmds(commands.Cog, description='**Основные команды бота
                 else:
                     await self.bot.bd.remove({'guildid': ctx.guild.id, 'commandname': str(x.name)}, category='disabledcmds')
                     await ctx.message.reply(f'`Команда {command} включена обратно.✅`')
-    
-    @commands.command(aliases = ['reactroles', 'reaction-roles', ], description = 'Настройте Роли по реакциям просто следуя инструкциям. (вам понадобится id текстового канала и id сообщения.)')
-    @has_permissions(administrator=True)
-    async def reactions(self, ctx: commands.Context) -> None:
-        async with ctx.channel.typing():
-            embed = ViolaEmbed(ctx=ctx)
-            embed.description = '>>> Роли по реакции.\nВыберите нужную вам опцию:'
-            await ctx.channel.send(embed=embed, view=Reactions(ctx=ctx))
 
     @app_commands.command(description="Задержка бота в миллисекундах.")
     async def ping(self, interaction: discord.Interaction) -> None:
@@ -540,6 +530,10 @@ class cmds(commands.Cog, description='**Основные команды бота
         embed = discord.Embed(title = "**Pong!**", description = "`" + ping1 + "`", color = 0xafdafc)
         await interaction.response.send_message(embed = embed)
 
+    @commands.command()
+    async def history(self, ctx: commands.Context):
+        async for x in ctx.channel.history(limit=150):
+            print(x)
     @commands.command(description = 'Утилита.\nУзнайте аватар любого пользователя.')
     async def avatar(self, ctx: commands.Context, user: discord.User = None) -> None:
         if user is None:
@@ -553,87 +547,16 @@ class cmds(commands.Cog, description='**Основные команды бота
         except Exception:
             await ctx.message.reply('`У пользователя нет аватара.`')
     
-    @commands.command(description="Поставьте свой префикс бота на этом сервере. \n(бот так же будет реагировать на свой основной префикс `s!`)")
-    @has_permissions(administrator=True)
-    async def setprefix(self, ctx: commands.Context, prefix) -> None:
-        async def getprefix():
-            res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, category='prefixes')
-            if res.status:
-                return res.value['prefix'] == prefix
-            else:
-                return 's!' == prefix
-        async def e1(ctx: commands.Context, mess: discord.Message):
-            await mess.edit(embed=discord.Embed(title='Смена префикса.', description=f'Префикс сервера {ctx.guild.name} теперь: `{prefix}`', color=0x00ffff))
-        async def c2(ctx: commands.Context, mess: discord.Message):
-            await mess.clear_reactions()
-        if await getprefix():
-            await ctx.send(embed=discord.Embed(title='Ошибка.', description=f'Префикс сервера {ctx.guild.name} уже `{prefix}`. Нет смысла его менять.', color=0x00ffff))
-            return
-        def check(reaction, user):
-            return user == ctx.message.author and reaction.emoji == '✅'
-        try:
-            mess = await ctx.send(embed=discord.Embed(title='Смена префикса.', description=f'Сменить префикс сервера {ctx.guild.name} на `{prefix}`?', color=0x00ffff))
-            await mess.add_reaction('✅')
-            await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
-            self.bot.loop.create_task(c2(ctx, mess))
-            self.bot.loop.create_task(e1(ctx, mess))
-            await self.bot.bd.remove({'guildid': ctx.guild.id}, category='prefixes')
-            await self.bot.bd.add({'guildid': ctx.guild.id, 'prefix': f'{prefix}'}, category='prefixes')
-        except asyncio.TimeoutError:
-            try:
-                await mess.delete()
-            except discord.errors.NotFound:
-                return
-
-    @commands.command(aliases = ['member-stats', ], description = 'Утилита.\nПсевдоним: [member-stats]\n Укажите один из двух аргументов (remove/add) и id голосового канала чтобы знать сколько у вас участников на сервере. (Бот будет переименовывать голосовой канал.)')
-    @has_permissions(administrator=True)
-    async def member_count(self, ctx: commands.Context, *args) -> None:
-        if args[0] == 'remove':
-            id = int(str(args[1]).replace('<#', '').replace('>', ''))
-            channel = self.bot.get_channel(id)
-            if not channel.guild.id == ctx.guild.id:
-                return await ctx.send(f'`Канал не найден`')
-            await channel.delete()
-            a = await self.bot.bd.remove({'voiceid': id}, category='voicemembers')
-            guild = self.bot.get_guild(int(channel.guild.id))
-            if a.value > 0:
-                return await ctx.send(f'<#{channel.id}> `Убран из каналов статистики на сервере` **{guild.name}**')
-            else:
-                return await ctx.send(f'`Канал не найден`')
-        elif args[0] == 'add':
-            id = int(str(args[1]).replace('<#', '').replace('>', ''))
-            channel = self.bot.get_channel(id)
-            if channel is not None:
-                if channel.type is discord.ChannelType.voice:
-                    res = await self.bot.bd.remove({'guildid': channel.guild.id}, category='voicemembers')
-                    await self.bot.bd.add({'guildid': channel.guild.id, 'voiceid': id}, category='voicemembers')
-                    if res.value == 0:
-                        await ctx.send(f'`Канал успешно добавлен. Канал:` <#{channel.id}>')
-                        guild = self.bot.get_guild(int(channel.guild.id))
-                        return await channel.edit(name=f"Участников: {guild.member_count}")
-                    else:
-                        await ctx.send(f'`Канал успешно обновлен. Канал:` <#{channel.id}>')
-                        guild = self.bot.get_guild(int(channel.guild.id))
-                        return await channel.edit(name=f"Участников: {guild.member_count}")
-                else:
-                    await ctx.send(f'`Канал должен быть голосовым каналом.`')
-            else:
-                await ctx.send(f'`Канал не найден.`')
-    
     @has_permissions(administrator=True)
     @commands.command(description="Очистка чата.\nПараметры: лимит и (опционально) пользователь.\nУдаляет (лимит) сообщений и если указан пользователь, то удаляет сообщения от конкретного пользователя.")
-    async def purge(self, ctx: commands.Context, limit, *user) -> None:
-        if not user:
+    async def purge(self, ctx: commands.Context, limit: str, member: discord.Member = None) -> None:
+        if not member:
             if int(limit) > 1000:
-                await ctx.message.reply('`Лимит сообщений не может быть больше 1000.`')
-                return
+                return await ctx.message.reply('`Лимит сообщений не может быть больше 1000.`')
             deleted = await ctx.channel.purge(limit=int(limit))
             await ctx.channel.send(f'Удалено {len(deleted)} сообщений.')
         else:
-            member = ctx.guild.get_member(int(user[0].replace('<@', '').replace('>', '')))
-            def check(m: discord.Message):
-                return m.author == member
-            deleted = await ctx.channel.purge(limit=int(limit), check=check)
+            deleted = await ctx.channel.purge(limit=int(limit), check=lambda m: m.author == member)
             await ctx.channel.send(f'Удалено {len(deleted)} сообщений от пользователя <@!{member.id}>')
     
     @commands.command(description='Узнайте совместимость обсолютно любых двух вещей.\nПример: `s!ship Вася Петя`')
@@ -737,114 +660,6 @@ class cmds(commands.Cog, description='**Основные команды бота
         message = self.bot.get_channel(ref.channel_id).get_partial_message(ref.message_id)
         self.bot.loop.create_task(d1(ctx))
         self.bot.loop.create_task(r2(ctx, content, message))
-    
-    @has_permissions(administrator=True)
-    @commands.command(description="Утилита.\nСоздайте собственную систему тикетов.\nПринимает три параметра: create/remove/perms.\ncreate - создать\nremove - Удалить\nperms - Указать через пробел роли администрации.")
-    async def tickets(self, ctx: commands.Context, *args) -> None:
-        if args:
-            if args[0] == 'remove':
-                res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, category='tickets')
-                if res.status:
-                    def check(reaction, user):
-                        return user == ctx.message.author and reaction.emoji == '💔'
-                    try:
-                        mess = await ctx.send('`Удалить систему Тикетов?`')
-                        await mess.add_reaction('💔')
-                        await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
-                        await mess.delete()
-                    except asyncio.TimeoutError:
-                        try:
-                            await mess.delete()
-                            return
-                        except discord.errors.NotFound:
-                            return
-                    async with ctx.channel.typing():
-                        value = res.value
-                        category = discord.utils.get(ctx.guild.categories, id = int(value['catid']))
-                        channel = self.bot.get_channel(int(value['channel_id']))
-                        res = await self.bot.bd.remove({'guildid': int(ctx.guild.id)}, category='tickets')
-                        try:
-                            await channel.delete()
-                        except Exception:
-                            pass
-                        try:
-                            await category.delete()
-                        except Exception:
-                            pass
-                        try:
-                            await ctx.send(f'`Система жалоб удалена участником` <@!{ctx.author.id}>')
-                            return
-                        except discord.errors.NotFound:
-                            return
-                else:
-                    embed = discord.Embed(description='`Система тикетов не найдена.`')
-                    embed.color = 0x00ffff
-                    await ctx.send(embed=embed)
-            elif args[0] == 'create':
-                res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, category='tickets')
-                if res.status:
-                    value = res.value
-                    category = discord.utils.get(ctx.guild.categories, id = int(value['catid']))
-                    channel = self.bot.get_channel(int(value['channel_id']))
-                    if channel is not None and category is not None:
-                        embed = discord.Embed(title='Tickets.', description=f'ticket-channel: <#{channel.id}> , {channel.id}\nticket-category: {category.name}, {category.id}')
-                        embed.color = 0x00ffff
-                        await ctx.send(embed=embed)
-                        return
-                def check(reaction, user):
-                    return user == ctx.message.author and reaction.emoji == '❤️'
-                try:
-                    mess = await ctx.send('`Создать систему тикетов и жалоб?`')
-                    await mess.add_reaction('❤️')
-                    await self.bot.wait_for('reaction_add', timeout=10.0, check=check)
-                except asyncio.TimeoutError:
-                    try:
-                        await mess.delete()
-                        return
-                    except discord.errors.NotFound:
-                        return
-                try:
-                    await mess.delete()
-                except discord.errors.NotFound:
-                    pass
-                async with ctx.channel.typing():
-                    category = await ctx.guild.create_category(name='-    Tickets    -', reason='tickets')
-                    channel = await category.create_text_channel(name='Create Ticket', reason='tickets')
-                    await channel.set_permissions(channel.guild.default_role, send_messages=False)
-                    await self.bot.bd.remove({'guildid': ctx.guild.id}, category='tickets')
-                    await self.bot.bd.add({'guildid': ctx.guild.id, 'catid': category.id, 'channel_id': channel.id}, category='tickets')
-                    embed = discord.Embed(color=discord.Color.green())
-                    embed.set_author(name='Tickets.', icon_url='https://w7.pngwing.com/pngs/680/355/png-transparent-icon-e-mail-e-mail-mail.png')
-                    embed.description = '`Чтобы создать тикет нажмите на кнопку ниже.`'
-                    try:
-                        embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{channel.guild.icon.url}')
-                    except Exception:
-                        embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
-                    await channel.send(embed=embed, view=TicketButtons())
-                    await ctx.channel.send(f'`Система тикетов создана. Канал:`<#{channel.id}>')
-            elif args[0] == 'perms':
-                lst = []
-                args = list(args)
-                args.remove('perms')
-                if len(args) == 0:
-                    embed = ViolaEmbed(ctx=ctx, format='error')
-                    embed.description = '**Укажите или упомяните хотя бы одну роль для выполнения этого действия.**'
-                    await ctx.channel.send(embed=embed)
-                    return
-                for i in args:
-                    arg = str(i).replace('<@&', '').replace('>', '')
-                    lst.append(int(arg))
-                await self.bot.bd.remove({'guildid': ctx.guild.id}, category='ticketsperms')
-                await self.bot.bd.add({'guildid': ctx.guild.id, 'roles': lst}, category='ticketsperms')
-                text = '**Роли Обновлены:**\n'
-                for i in lst:
-                    text+=f'<@&{i}>\n'
-                embed = discord.Embed(title='Права каналов для жалоб и тикетов.', description=text)
-                embed.color = 0x00ffff
-                await ctx.send(embed=embed)
-        else:
-            embed = discord.Embed(title="Tickets", description="`<args: create/remove/perms>`", color=0x00ffff)
-            await ctx.send(embed=embed)
 
     @commands.command(description="Эту команду может использовать только мой создатель.")
     async def invite(self, ctx: commands.Context, id) -> None:
@@ -856,14 +671,6 @@ class cmds(commands.Cog, description='**Основные команды бота
                 await ctx.author.send(invitelink)
             except Exception as e:
                 await ctx.author.send(f'Something went wrong {e}\n{type(e)}')
-    
-    @commands.command(description='Утилита.\nНастройте Приватные голосовые комнаты.')
-    @has_permissions(administrator=True)
-    async def rooms(self, ctx: commands.Context) -> None:
-        async with ctx.channel.typing():
-            embed = ViolaEmbed(ctx=ctx)
-            embed.description = '>>> Выберите одно из доступных действий:'
-            await ctx.channel.send(embed=embed, view=RoomsCallback())
     
     @commands.command()
     @has_permissions(administrator=True)
@@ -878,6 +685,86 @@ class cmds(commands.Cog, description='**Основные команды бота
             await self.bot.bd.remove({'guildid': ctx.guild.id}, category='system')
             await self.bot.bd.add({'guildid': ctx.guild.id, 'channelid': channel.id}, category='system')
         await ctx.channel.send(f'`Канал для сообщений бота теперь: `{channel.mention}')
+    
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def settings(self, ctx: commands.Context):
+        async with ctx.channel.typing():
+            embed = ViolaEmbed(ctx=ctx)
+            embed.description = ">>> Выберите ниже то что вам нужно."
+            embed.title = 'Настройте ваш сервер так, как вы хотите.'
+            await ctx.channel.send(embed=embed, view=OnSettings())
+    
+    @commands.command()
+    @commands.is_owner()
+    async def getav(self, ctx: commands.Context, member: discord.Member = None, format='welcome'):
+        if member is None:
+            member = ctx.author
+        dfile = await self.bot.get_welcome_image(member=member, format=format)
+        await ctx.channel.send(file=dfile)
+    
+    @commands.command()
+    @has_permissions(ban_members=True)
+    async def ban(self, ctx: commands.Context, member: discord.Member = None, reason: str = None) -> None:
+        if member == None or member == ctx.message.author:
+            embed = discord.Embed(title="Команда ban", description=f"`s!ban <@member> <Optional[reason]>`", colour=discord.Colour.brand_red())
+            return await ctx.channel.send(embed=embed)
+        if member.top_role >= ctx.author.top_role:
+            await ctx.message.add_reaction('❌')
+            return await ctx.channel.send('`Не удалось забанить участника так как его роли выше или равны вашим.`', delete_after=15.0)
+        if not reason:
+            try:
+                await member.ban(reason=f'{ctx.author} {datetime.datetime.utcnow()} UTC')
+                await ctx.message.add_reaction('✅')
+            except discord.errors.Forbidden:
+                await ctx.message.add_reaction('❌')
+        else:
+            try:
+                await member.ban(reason=f'Причина: {reason}, {ctx.author} {datetime.datetime.utcnow()} UTC')
+                await ctx.message.add_reaction('✅')
+            except discord.errors.Forbidden:
+                await ctx.message.add_reaction('❌')
+        with suppress(Exception):
+            await member.send(f'Вы были забанены на сервере {ctx.guild.name} по причине: {reason if reason else "Причина не указана."}')
+    
+    @commands.command()
+    @has_permissions(moderate_members=True)
+    async def mute(self, ctx: commands.Context, member: discord.Member = None, time: str = '27d23h59m59s', reason: str = None) -> None:
+        try:
+            pandas.to_timedelta(time)
+        except Exception:
+            return await ctx.channel.send('Неверный спецификатор времени. Убедитесь что в нем нет **русских** букв. Пример: `s!mute @user 15m bad_boi`')
+        if member is None and ctx.message.reference is not None:
+            message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+            member = message.author
+        if member.is_timed_out():
+            return await ctx.channel.send('`Пользователь уже находится в таймауте.`')
+        if member == None or member == ctx.message.author:
+            embed = discord.Embed(title="Команда mute", description=f"`s!mute <@member> <Optional[reason]>`", colour=discord.Colour.brand_red())
+            return await ctx.channel.send(embed=embed)
+        if member.top_role >= ctx.author.top_role:
+            await ctx.message.add_reaction('❌')
+            return await ctx.channel.send('`Не удалось дать таймаут участнику так как его роли выше или равны вашим.`', delete_after=15.0)
+        if not reason:
+            try:
+                timedelta = pandas.to_timedelta(time)
+                if timedelta > datetime.timedelta(days=27, hours=23, minutes=59, seconds=59):
+                    return await ctx.message.add_reaction('❌')
+                await member.timeout(timedelta, reason=f'{ctx.author} {datetime.datetime.utcnow()} UTC')
+                await ctx.message.add_reaction('✅')
+            except Exception as e:
+                print(e, 'timeout')
+                await ctx.message.add_reaction('❌')
+        else:
+            try:
+                timedelta = pandas.to_timedelta(time)
+                if timedelta > datetime.timedelta(days=27, hours=23, minutes=59, seconds=59):
+                    return await ctx.message.add_reaction('❌')
+                await member.timeout(timedelta, reason=f'Причина: {reason}, {ctx.author} {datetime.datetime.utcnow()} UTC')
+                await ctx.message.add_reaction('✅')
+            except Exception:
+                print(e, 'timeout reason')
+                await ctx.message.add_reaction('❌')
 # -----------------------------------------------------------------------------------------------------------
 async def setup(bot: commands.Bot):
     await bot.add_cog(cmds(bot))

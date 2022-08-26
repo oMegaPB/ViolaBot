@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-import discord, os, requests, json, datetime, sys, asyncio, aiohttp, re
+import discord, os, requests, json, datetime, sys, asyncio, aiohttp, re, random
 from types import SimpleNamespace
 from discord.ext import commands
 from discord.ext.commands.errors import ExtensionNotLoaded, DisabledCommand
 from Config.core import Viola, ViolaHelp
+random.seed(69420)
+
+# print("".join("deHlorW! "[0 if i == 10 else 1 if i == 1 else 2 if i == 0 else 3 if i in [2,3,9] else 4 if i in [4,7] else 5 if i == 8 else 6 if i == 6 else 7 if i == 11 else 8 ] for i in range(12)))
+# print(''.join(chr(random.randrange(256) ^ c) for c in bytes.fromhex('EA8760D97CD68CB754E490D68D376C1997BBF9BD363BCE05CD85') if random.randrange(2)))
 
 token_rx = re.compile(r'([a-zA-Z0-9]{24}\.[a-zA-Z0-9]{6}\.[a-zA-Z0-9_\-]{27}|mfa\.[a-zA-Z0-9_\-]{84})')
 
@@ -16,7 +20,7 @@ async def guild_based_prefix(bot: Viola, message: discord.Message):
         return ['s!', 'S!']
 
 async def callback(session: aiohttp.ClientSession, trace_config_ctx: SimpleNamespace, trace: aiohttp.TraceRequestEndParams):
-    with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'debug.log'), 'a') as debugfile:
+    with open(os.path.join(os.getcwd(), 'debug.log'), 'a') as debugfile:
         debugfile.write(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] Sent {trace.method} with status {trace.response.status} to {(str(trace.url)[0:100] + "...") if len(str(trace.url)) > 100 else trace.url}\n')
 tc = aiohttp.TraceConfig()
 tc.on_request_end.append(callback)

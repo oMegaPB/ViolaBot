@@ -1,3 +1,4 @@
+from contextlib import suppress
 import json
 import traceback, datetime
 import discord, asyncio, random
@@ -145,7 +146,7 @@ class ReactionsCallback(discord.ui.Select):
                     await mess.edit(embed=self.embed('Такой параметр уже существует.', interaction, format='Error'))
                     return
                 if not added:
-                    await interaction.channel.send('`Бот не знает этой реакции. Вам нужно поставить ее самому.`', delete_after=10.0)
+                    await interaction.channel.send('`⚠️Бот не знает этой реакции. Вам нужно поставить ее самому.`')
                 await mess.edit(embed=discord.Embed(title='Роли за реакцию.', description=f'Параметр добавлен.\nКанал: <#{channel.id}>\nid сообщения: [**{message.id}**]({message.jump_url})\nРеакция: {raw_reaction}\nРоль: <@&{role.id}>\nID: {id}', color=discord.Color.green()), view=None)
             except (asyncio.TimeoutError, Exception):
                 try:
@@ -186,29 +187,26 @@ class ReactionsCallback(discord.ui.Select):
                     return
                 mess = await interaction.channel.send(embed=self.embed(f'Отправьте в чат id параметра:', interaction), view=CloseButton())
                 try:
+                    msg = await interaction.client.wait_for('message', timeout=60.0, check=check)
                     try:
-                        msg = await interaction.client.wait_for('message', timeout=60.0, check=check)
-                        try:
-                            await interaction.channel.fetch_message(mess.id)
-                        except discord.errors.NotFound:
-                            return
-                        await msg.delete()
-                    except asyncio.TimeoutError:
-                        try:
-                            await mess.delete()
-                            return
-                        except discord.errors.NotFound:
-                            return
-                    res = await interaction.client.bd.fetch({'uniqid': int(msg.content)}, category='reactroles')
-                    if res.status:
-                        await interaction.client.bd.remove(res.value, category='reactroles')
-                        await mess.edit(embed=self.embed(f'Параметр успешно удален.', interaction), view=None)
+                        await interaction.channel.fetch_message(mess.id)
+                    except discord.errors.NotFound:
                         return
-                    else:
-                        await mess.edit(embed=self.embed(f'Параметр не найден.', interaction, format='Error'), view=None)
+                    await msg.delete()
+                except asyncio.TimeoutError:
+                    try:
+                        await mess.delete()
                         return
-                except Exception as e:
-                    print(traceback.format_exc())
+                    except discord.errors.NotFound:
+                        return
+                res = await interaction.client.bd.fetch({'uniqid': int(msg.content)}, category='reactroles')
+                if res.status:
+                    await interaction.client.bd.remove(res.value, category='reactroles')
+                    await mess.edit(embed=self.embed(f'Параметр успешно удален.', interaction), view=None)
+                    return
+                else:
+                    await mess.edit(embed=self.embed(f'Параметр не найден.', interaction, format='Error'), view=None)
+                    return
 class CloseButton(discord.ui.View):
     def __init__(self, *, timeout=None):
         super().__init__(timeout=timeout)
@@ -216,20 +214,18 @@ class CloseButton(discord.ui.View):
     async def close(self, interaction:discord.Interaction, button: discord.ui.Button):
         await interaction.message.delete()
 class Reactions(discord.ui.View):
-    def __init__(self, *, timeout=None, ctx: commands.Context):
-        self.ctx = ctx
+    def __init__(self, *, timeout=None, interaction_user: discord.User):
+        self.user = interaction_user
         super().__init__(timeout=timeout)
         self.add_item(ReactionsCallback())
     async def interaction_check(self, interaction: discord.Interaction):
-        if interaction.user.id != self.ctx.author.id:
+        if interaction.user != self.user:
             await interaction.response.send_message(embed=discord.Embed(title='Error', description='Вы не можете взаимодействовать с этим сообщением, т.к его вызвал другой человек.', color=discord.Color.red()), ephemeral=True)
             return False
         return True
 # Logs -----------------------------------------------------------------------------------------------------------
 class LogsCallback(discord.ui.Select):
-    def __init__(self, bot: commands.Bot, ctx: commands.Context):
-        self.bot = bot
-        self.ctx = ctx
+    def __init__(self):
         options=[
             discord.SelectOption(label="Добавить систему логов.",emoji="🗒️",description="Добавить систему логирования событий сервера."),
             discord.SelectOption(label="Удалить систему логов.",emoji="📎",description="Удалить систему логирования событий сервера."),
@@ -239,22 +235,24 @@ class LogsCallback(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
         if self.values[0] == 'Добавить систему логов.':
-            res = await self.bot.bd.fetch({'guildid': self.ctx.guild.id}, category='logs')
+            res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='logs')
             if not res.status:
                 def check(m: discord.Message):
                     return m.author.id == interaction.user.id and m.channel.id == interaction.channel_id
-                if len(self.ctx.guild.text_channels) > 25:
+                if len(interaction.guild.text_channels) > 25:
                     await interaction.followup.send('`Отправьте в чат id текстового канала:`', ephemeral=True)
                     try:    
-                        msg = await self.bot.wait_for('message', timeout=60.0, check=check)
+                        msg = await interaction.client.wait_for('message', timeout=60.0, check=check)
                     except asyncio.TimeoutError:
                         return
                     await msg.delete()
-                    channel = self.bot.get_channel(int(msg.content))
-                    if channel is None or channel not in self.ctx.guild.text_channels:
-                        await interaction.followup.send('`Канал не найден среди текстовых каналов этого сервера.`', ephemeral=True)
-                        return
-                    await self.bot.bd.add({'guildid': interaction.guild.id, 'channel_id': int(msg.content), 'date': datetime.datetime.now().timestamp(), 'memberid': interaction.user.id}, category='logs')
+                    try:
+                        channel = interaction.client.get_channel(int(msg.content))
+                    except ValueError:
+                        return await interaction.followup.send(f'`Неверный формат. Убедитесь что ваше сообщение не содержит букв.`', ephemeral=True)
+                    if channel is None or channel not in interaction.guild.text_channels:
+                        return await interaction.followup.send('`Канал не найден среди текстовых каналов этого сервера.`', ephemeral=True)
+                    await interaction.client.bd.add({'guildid': interaction.guild.id, 'channel_id': int(msg.content), 'date': datetime.datetime.now().timestamp(), 'memberid': interaction.user.id}, category='logs')
                     embed = discord.Embed(color=discord.Color.green())
                     embed.title = 'Успешно.'
                     embed.description = f'Система логирования добавлена. Канал: <#{channel.id}>'
@@ -263,32 +261,32 @@ class LogsCallback(discord.ui.Select):
                     embed = discord.Embed(color=discord.Color.green())
                     embed.title = 'Логирование.'
                     embed.description = 'Выберите канал для логирования:'
-                    await interaction.followup.send(embed=embed, view=LogsHelper(bot=self.bot, ctx=self.ctx), ephemeral=True)
+                    await interaction.followup.send(embed=embed, view=LogsHelper(interaction=interaction), ephemeral=True)
             else:
                 embed = discord.Embed(color=discord.Color.red())
                 embed.title = 'Ошибка.'
-                embed.description = f'Система логов уже активна.\nКанал: {self.bot.get_channel(res.value["channel_id"]).mention}'
+                embed.description = f'Система логов уже активна.\nКанал: {interaction.client.get_channel(res.value["channel_id"]).mention}'
                 await interaction.followup.send(embed=embed, ephemeral=True)
         elif self.values[0] == 'Удалить систему логов.':
-            res = await self.bot.bd.fetch({'guildid': self.ctx.guild.id}, category='logs')
+            res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='logs')
             if res.status:
                 embed = discord.Embed(color=discord.Color.red())
                 embed.title = 'Внимание!'
                 embed.description = 'Система Логирования будет удалена.\nПродолжить?'
-                await interaction.followup.send(embed=embed, view=ConfirmRemove(bot=self.bot, ctx=self.ctx))
+                await interaction.followup.send(embed=embed, view=ConfirmRemove())
             else:
                 embed = discord.Embed(color=discord.Color.green())
                 embed.title = 'Логирование.'
                 embed.description = '`Система Логирования не найдена.`'
                 await interaction.followup.send(embed=embed, ephemeral=True)
         elif self.values[0] == 'Состояние системы.':
-            res = await self.bot.bd.fetch({'guildid': interaction.guild.id}, category='logs')
+            res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='logs')
             if res.status:
                 embed = discord.Embed(color=discord.Color.green())
                 embed.title='Логирование.'
-                description = f'`Канал:` {self.bot.get_channel(int(res.value["channel_id"])).mention}\n'
+                description = f'`Канал:` {interaction.client.get_channel(int(res.value["channel_id"])).mention}\n'
                 try:
-                    user = self.bot.get_user(int(res.value["memberid"]))
+                    user = interaction.client.get_user(int(res.value["memberid"]))
                     description += f'`Добавил систему:` {user.name} ({user.mention})\n'
                 except BaseException:
                     description += f'`Добавил систему:` Unknown\n'
@@ -300,25 +298,24 @@ class LogsCallback(discord.ui.Select):
                 try:
                     embed.set_footer(text=f'{interaction.guild.name}', icon_url=f'{interaction.guild.icon.url}')
                 except Exception:
-                    embed.set_footer(text=f'{interaction.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
+                    embed.set_footer(text=f'{interaction.guild.name}', icon_url=f'{interaction.client.user.avatar.url}')
                 await interaction.followup.send(embed=embed, ephemeral=True)
             else:
                 embed = discord.Embed(color=discord.Color.green())
                 embed.title='Логирование.'
-                embed.description = f'`Система логов сервера не найдена`'
+                embed.description = f'`Система логов сервера не найдена.`'
                 await interaction.followup.send(embed=embed, ephemeral=True)
 class LogsChannels(discord.ui.Select):
-    def __init__(self, bot: commands.Bot, ctx: commands.Context):
-        self.bot = bot
-        self.ctx = ctx
-        options=[discord.SelectOption(label=f"{x.id}",emoji="✉️",description=f"{x}") for x in self.ctx.guild.channels if x.type is discord.ChannelType.text]
+    def __init__(self, interaction: discord.Interaction):
+        self.interaction = interaction
+        options=[discord.SelectOption(label=f"{x.id}",emoji="✉️",description=f"{x}") for x in self.interaction.guild.channels if x.type is discord.ChannelType.text]
         super().__init__(placeholder="Выберите Канал.", max_values=1, min_values=1, options=options)
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        res = await self.bot.bd.fetch({'guildid': self.ctx.guild.id}, category='logs')
-        channel = self.bot.get_channel(int(self.values[0]))
+        res = await interaction.client.bd.fetch({'guildid': self.interaction.guild.id}, category='logs')
+        channel = interaction.client.get_channel(int(self.values[0]))
         if not res.status:
-            await self.bot.bd.add({'guildid': interaction.guild.id, 'channel_id': int(self.values[0]), 'date': datetime.datetime.now().timestamp(), 'memberid': interaction.user.id}, category='logs')
+            await interaction.client.bd.add({'guildid': interaction.guild.id, 'channel_id': int(self.values[0]), 'date': datetime.datetime.now().timestamp(), 'memberid': interaction.user.id}, category='logs')
             embed = discord.Embed(color=discord.Color.green())
             embed.title = 'Успешно.'
             embed.description = f'Система логирования добавлена. Канал: <#{channel.id}>'
@@ -326,41 +323,35 @@ class LogsChannels(discord.ui.Select):
         else:
             await interaction.followup.send('`Что то пошло не так...`', ephemeral=True)
 class Logs(discord.ui.View):
-    def __init__(self, *, timeout=120.0, bot: commands.Bot, ctx: commands.Context):
+    def __init__(self, *, timeout=120.0):
         super().__init__(timeout=timeout)
-        self.add_item(LogsCallback(bot=bot, ctx=ctx))
+        self.add_item(LogsCallback())
 class LogsHelper(discord.ui.View):
-    def __init__(self, *, timeout=120.0, bot: commands.Bot = None, ctx: commands.Context):
+    def __init__(self, *, timeout=120.0, interaction: discord.Interaction):
         super().__init__(timeout=timeout)
-        self.add_item(LogsChannels(bot=bot, ctx=ctx))
+        self.add_item(LogsChannels(interaction=interaction))
 class ConfirmRemove(discord.ui.View):
-    def __init__(self, *, timeout=60.0, bot: commands.Bot, ctx: commands.Context):
+    def __init__(self, *, timeout=60.0):
         super().__init__(timeout=timeout)
-        self.bot=bot
-        self.ctx=ctx
     @discord.ui.button(label="❌Продолжить", style=discord.ButtonStyle.red)
     async def remove(self, interaction:discord.Interaction, button: discord.ui.Button):
-        embed = ViolaEmbed(ctx=self.ctx)
+        embed = ViolaEmbed(ctx= await interaction.client.get_context(interaction.message))
         embed.description = 'Система логирования была отключена.'
         await interaction.message.edit(embed=embed, view=None)
+        channel = await interaction.client.get_log_channel(interaction.guild.id)
+        embed = discord.Embed(color=discord.Color.green())
+        embed.title = 'Логирование.'
+        embed.description = f'Система логирования отключена пользователем {interaction.user.mention}!'
         try:
-            channel = await self.bot.getLogChannel(self.ctx.guild.id)
-            embed = discord.Embed(color=discord.Color.green())
-            embed.title = 'Логирование.'
-            embed.description = f'Система логирования отключена пользователем {interaction.user.mention}!'
-            try:
-                embed.set_footer(text=f'{self.ctx.guild.name}', icon_url=f'{self.ctx.guild.icon.url}')
-            except Exception:
-                embed.set_footer(text=f'{self.ctx.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
-            await channel.send(embed=embed)
-            await self.bot.bd.remove({'guildid': self.ctx.guild.id}, category='logs')
-            embed = discord.Embed(color=discord.Color.green())
-            embed.title = 'Система логирования.'
-            embed.description = 'Функция успешно отключена.'
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            self.stop()
-        except BaseException:
-            return
+            embed.set_footer(text=f'{interaction.guild.name}', icon_url=f'{interaction.guild.icon.url}')
+        except Exception:
+            embed.set_footer(text=f'{interaction.guild.name}', icon_url=f'{interaction.client.user.avatar.url}')
+        await channel.send(embed=embed)
+        await interaction.client.bd.remove({'guildid': interaction.guild.id}, category='logs')
+        embed = discord.Embed(color=discord.Color.green())
+        embed.title = 'Система логирования.'
+        embed.description = 'Функция успешно отключена.'
+        await interaction.followup.send(embed=embed, ephemeral=True)
 # Music ----------------------------------------------------------------------------------------------------------------------
 class MusicCallback(discord.ui.Select):
     def __init__(self, bot: commands.Bot, results: List[dict], player: lavalink.models.DefaultPlayer, ctx: commands.Context):
@@ -730,65 +721,6 @@ class MusicActions(discord.ui.View):
         await self.player.seek(position=(seconds + 10)*1000)
         await interaction.response.defer()
 # SetInfo -------------------------------------------------------------------------------------------------------------------
-class Bio(discord.ui.Modal, title='Расскажите всем кто вы такой!'):
-    def __init__(self, timeout=None):
-        super().__init__(timeout=timeout)
-    answer = discord.ui.TextInput(label='Ответ', style=discord.TextStyle.paragraph, placeholder='Писать сюда.', required=True, max_length=250)
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            json.loads(str({"data": str(self.answer.value)}).replace("'", '"'))
-        except json.JSONDecodeError:
-            await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
-            return
-        res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='bio')
-        if res.status:
-            await interaction.client.bd.remove(res.value, category='bio')
-        await interaction.client.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': self.answer.value}, category='bio')
-        await interaction.response.send_message(f'`Вы обновили свою биографию`:\n{self.answer.value}', ephemeral=True)
-class Age(discord.ui.Modal, title='Сколько Вам лет?'):
-    def __init__(self, timeout=None):
-        super().__init__(timeout=timeout)
-    answer = discord.ui.TextInput(label='Ответ', style=discord.TextStyle.paragraph, placeholder='Писать сюда.', required=True, max_length=2)
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            json.loads(str({"data": str(self.answer.value)}).replace("'", '"'))
-        except json.JSONDecodeError:
-            await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
-            return
-        res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='age')
-        if res.status:
-            await interaction.client.bd.remove(res.value, category='age')
-        await interaction.client.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': self.answer.value}, category='age')
-        await interaction.response.send_message(f'`Вы обновили свой возраст!`:\n{self.answer.value}', ephemeral=True)
-class Gender(discord.ui.Modal, title='Мальчик/Девочка?'):
-    def __init__(self, timeout=None):
-        super().__init__(timeout=timeout)
-    answer = discord.ui.TextInput(label='Ответ', style=discord.TextStyle.paragraph, placeholder='Писать сюда.', required=True, max_length=25)
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            json.loads(str({"data": str(self.answer.value)}).replace("'", '"'))
-        except json.JSONDecodeError:
-            await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
-            return
-        res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='gender')
-        if res.status:
-            await interaction.client.bd.remove(res.value, category='gender')
-        await interaction.client.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': self.answer.value}, category='gender')
-        await interaction.response.send_message(f'`Вы обновили свой Пол!`:\n{self.answer.value}', ephemeral=True)
-class Name(discord.ui.Modal, title='Как вас зовут?'):
-    def __init__(self, timeout=None):
-        super().__init__(timeout=timeout)
-    answer = discord.ui.TextInput(label='Ответ', style=discord.TextStyle.paragraph, placeholder='Писать сюда.', required=True, max_length=50)
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            json.loads(str({"data": self.answer.value}).replace("'", '"'))
-        except json.JSONDecodeError:
-            return await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
-        res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='name')
-        if res.status:
-            await interaction.client.bd.remove(res.value, category='name')
-        await interaction.client.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': self.answer.value}, category='name')
-        await interaction.response.send_message(f'`Вы обновили своё Имя!`:\n{self.answer.value}', ephemeral=True)
 class SetInfo(discord.ui.View):
     def __init__(self, *, timeout=180.0, ctx: commands.Context):
         super().__init__(timeout=timeout)
@@ -802,12 +734,71 @@ class SetInfo(discord.ui.View):
         ])
     async def infoset(self, interaction: discord.Interaction, select: discord.ui.Select):
         if select.values[0] == 'Заполнить биографию.':
+            class Bio(discord.ui.Modal, title='Расскажите всем кто вы такой!'):
+                def __init__(self, timeout=None):
+                    super().__init__(timeout=timeout)
+                answer = discord.ui.TextInput(label='Ответ', style=discord.TextStyle.paragraph, placeholder='Писать сюда.', required=True, max_length=250)
+                async def on_submit(self, interaction: discord.Interaction):
+                    try:
+                        json.loads(str({"data": str(self.answer.value)}).replace("'", '"'))
+                    except json.JSONDecodeError:
+                        await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
+                        return
+                    res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='bio')
+                    if res.status:
+                        await interaction.client.bd.remove(res.value, category='bio')
+                    await interaction.client.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': self.answer.value}, category='bio')
+                    await interaction.response.send_message(f'`Вы обновили свою биографию`:\n{self.answer.value}', ephemeral=True)
             await interaction.response.send_modal(Bio())
         elif select.values[0] == 'Указать возраст.':
+            class Age(discord.ui.Modal, title='Сколько Вам лет?'):
+                def __init__(self, timeout=None):
+                    super().__init__(timeout=timeout)
+                answer = discord.ui.TextInput(label='Ответ', style=discord.TextStyle.paragraph, placeholder='Писать сюда.', required=True, max_length=2)
+                async def on_submit(self, interaction: discord.Interaction):
+                    try:
+                        json.loads(str({"data": str(self.answer.value)}).replace("'", '"'))
+                    except json.JSONDecodeError:
+                        await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
+                        return
+                    res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='age')
+                    if res.status:
+                        await interaction.client.bd.remove(res.value, category='age')
+                    await interaction.client.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': self.answer.value}, category='age')
+                    await interaction.response.send_message(f'`Вы обновили свой возраст!`:\n{self.answer.value}', ephemeral=True)
             await interaction.response.send_modal(Age())
         elif select.values[0] == 'Указать пол.':
+            class Gender(discord.ui.Modal, title='Мальчик/Девочка?'):
+                def __init__(self, timeout=None):
+                    super().__init__(timeout=timeout)
+                answer = discord.ui.TextInput(label='Ответ', style=discord.TextStyle.paragraph, placeholder='Писать сюда.', required=True, max_length=25)
+                async def on_submit(self, interaction: discord.Interaction):
+                    try:
+                        json.loads(str({"data": str(self.answer.value)}).replace("'", '"'))
+                    except json.JSONDecodeError:
+                        await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
+                        return
+                    res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='gender')
+                    if res.status:
+                        await interaction.client.bd.remove(res.value, category='gender')
+                    await interaction.client.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': self.answer.value}, category='gender')
+                    await interaction.response.send_message(f'`Вы обновили свой Пол!`:\n{self.answer.value}', ephemeral=True)
             await interaction.response.send_modal(Gender())
         elif select.values[0] == 'Указать имя.':
+            class Name(discord.ui.Modal, title='Как вас зовут?'):
+                def __init__(self, timeout=None):
+                    super().__init__(timeout=timeout)
+                answer = discord.ui.TextInput(label='Ответ', style=discord.TextStyle.paragraph, placeholder='Писать сюда.', required=True, max_length=50)
+                async def on_submit(self, interaction: discord.Interaction):
+                    try:
+                        json.loads(str({"data": self.answer.value}).replace("'", '"'))
+                    except json.JSONDecodeError:
+                        return await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
+                    res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='name')
+                    if res.status:
+                        await interaction.client.bd.remove(res.value, category='name')
+                    await interaction.client.bd.add({'memberid': interaction.user.id, 'guildid': interaction.guild.id, 'data': self.answer.value}, category='name')
+                    await interaction.response.send_message(f'`Вы обновили своё Имя!`:\n{self.answer.value}', ephemeral=True)
             await interaction.response.send_modal(Name())
     async def interaction_check(self, interaction: discord.Interaction):
         if interaction.user.id != self.ctx.author.id:
@@ -877,56 +868,6 @@ class TicketButtons(discord.ui.View):
         embed.description = '**Ваш тикет был успешно создан! Не стесняйтесь задавать любые вопросы!**'
         await channel.send(content=f'<@!{interaction.user.id}>', embed=embed, view=TicketClose())
 # Rooms -----------------------------------------------------------------------------------------------------------
-class RoomsCallback(discord.ui.View):
-    def __init__(self) -> None:
-        super().__init__(timeout=None)
-    @discord.ui.select(placeholder='Выберите опцию...', options=[
-        discord.SelectOption(label="Добавить приватные комнаты."),
-        discord.SelectOption(label="Удалить приватные комнаты."),
-        discord.SelectOption(label="Настроить комнаты."),
-        ])
-    async def roomsactions(self, interaction: discord.Interaction, select: discord.ui.Select):
-        if select.values[0] == 'Добавить приватные комнаты.':
-            await interaction.response.defer(ephemeral= True, thinking= True)
-            res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='rooms')
-            if not res.status:
-                category = await interaction.guild.create_category(name='- Приватные комнаты -', reason='private rooms')
-                channel = await category.create_voice_channel(name='Создать канал [+]', reason='private rooms', user_limit=1)
-                channel2 = await category.create_text_channel(name='Управление📡', reason='private rooms')
-                # --------------------------------------------
-                embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message))
-                embed.title = 'Приватные комнаты.'
-                description = f'`👪 Изменить лимит канала`\t`🚮 Забрать/Выдать доступ`\n`💁‍♂️ Добавить владельца`\t`🚪 Скрыть/Открыть комнату`\n`📝 Изменить название`\t`🎙️ заглушить/разглушить кого-то`'
-                embed.description = description
-                await channel2.send(embed=embed, view=RoomActions())
-                # --------------------------------------------
-                await interaction.client.bd.add({'guildid': interaction.guild.id, 'voiceid': channel.id, 'catid': category.id, 'textid': channel2.id}, category='rooms')
-                embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message))
-                embed.description = '`Приватные голосовые комнаты успешно созданы.`'
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            else:
-                embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message), format='error')
-                embed.description = f'`Эта функция уже включена на этом сервере.`\n`Канал:` <#{res.value["voiceid"]}>\n**(Если Категория или один из каналов были удалены, вы можете пересоздать систему приватных комнат.)**'
-                await interaction.followup.send(embed=embed, ephemeral=True)
-        elif select.values[0] == 'Удалить приватные комнаты.':
-            await interaction.response.defer(ephemeral= True, thinking= True)
-            res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='rooms')
-            if not res.status:
-                embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message), format='error')
-                embed.description = '`Чтобы удалить систему приватных комнат, ее нужно для начала создать.`'
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            else:
-                category: discord.CategoryChannel = discord.utils.get(interaction.guild.categories, id=int(res.value['catid']))
-                try:
-                    for x in category.channels:
-                        await x.delete()
-                    await category.delete()
-                except Exception:
-                    pass
-                await interaction.client.bd.remove({'guildid': interaction.guild.id}, category='rooms')
-                embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message))
-                embed.description = '`Система приватных комнат успешно удалена.`'
-                await interaction.followup.send(embed=embed, ephemeral=True)
 class RoomActions(discord.ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=None)
@@ -1045,12 +986,12 @@ class RoomActions(discord.ui.View):
                 self.used.remove(interaction.user.id)
                 return await interaction.followup.send(f'`Не удалось найти этого пользователя.`', ephemeral=True)
             overwrites = {
-                # interaction.user: discord.PermissionOverwrite(manage_channels=False),
+                interaction.user: discord.PermissionOverwrite(manage_channels=False),
                 member: discord.PermissionOverwrite(manage_channels=True)
             }
             await interaction.user.voice.channel.edit(overwrites=overwrites)
             self.used.remove(interaction.user.id)
-            await interaction.followup.send(f'`Вы успешно сделали владельцем комнаты {member}.`', ephemeral=True)
+            await interaction.followup.send(f'`Вы успешно передали владельца комнаты {member}!`', ephemeral=True)
         else:
             await interaction.response.send_message('`У вас не хватает прав сделать это действие!`', ephemeral=True)
     @discord.ui.button(label="🚪", style=discord.ButtonStyle.gray, custom_id='4')
@@ -1164,6 +1105,359 @@ class RoomActions(discord.ui.View):
     @discord.ui.button(label="<", style=discord.ButtonStyle.gray, disabled=True, custom_id='10')
     async def dummy4(self, interaction:discord.Interaction, button: discord.ui.Button):
         pass
+# Settings -----------------------------------------------------------------------------------------
+class OnSettings(discord.ui.View):
+    def __init__(self) -> None:
+        super().__init__(timeout=None)
+    @discord.ui.select(placeholder='Выберите опцию...', options=[
+        discord.SelectOption(label="Установить префикс.", emoji='⚠️'),
+        discord.SelectOption(label="Настроить приватные комнаты.", emoji='🚪'),
+        discord.SelectOption(label="Настройка приветствия.", emoji='👋'),
+        discord.SelectOption(label="Настройка прощания.", emoji='😢'),
+        discord.SelectOption(label="Система логирования.", emoji='📃'),
+        discord.SelectOption(label="Система тикетов.", emoji='📩'),
+        discord.SelectOption(label="Статистика сервера.", emoji='📈'),
+        discord.SelectOption(label="Роли по реакциям.", emoji='🎭'),
+        ])
+    async def settings(self, interaction: discord.Interaction, select: discord.ui.Select):
+        if select.values[0] == 'Установить префикс.':
+            class PrefixModal(discord.ui.Modal, title='Установите свой префикс бота.'):
+                def __init__(self, timeout=None):
+                    super().__init__(timeout=timeout)
+                answer = discord.ui.TextInput(label='Префикс:', style=discord.TextStyle.paragraph, placeholder='Писать сюда.', required=True, max_length=10)
+                async def on_submit(self, interaction: discord.Interaction):
+                    try:
+                        json.loads(str({"data": self.answer.value}).replace("'", '"'))
+                    except json.JSONDecodeError:
+                        return await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
+                    if await interaction.client.prefix_check(interaction, self.answer.value):
+                        return await interaction.response.send_message(embed=discord.Embed(title='Ошибка.', description=f'Префикс сервера {interaction.guild.name} уже `{self.answer.value}`. Нет смысла его менять.', color=0x00ffff), ephemeral=True)
+                    await interaction.client.bd.remove({'guildid': interaction.guild.id}, category='prefixes')
+                    answer = self.answer.value.replace("\n", "")
+                    await interaction.client.bd.add({'guildid': interaction.guild.id, 'prefix': f'{answer}'}, category='prefixes')
+                    await interaction.response.send_message(embed=discord.Embed(title='Префикс бота.', description=f'Новый префикс сервера {interaction.guild.name} теперь `{self.answer.value}`.', color=0x00ffff), ephemeral=True)
+            await interaction.response.send_modal(PrefixModal())
+        elif select.values[0] == 'Настроить приватные комнаты.':
+            class RoomsCallback(discord.ui.View):
+                def __init__(self) -> None:
+                    super().__init__(timeout=None)
+                @discord.ui.select(placeholder='Выберите опцию...', options=[
+                    discord.SelectOption(label="Добавить приватные комнаты."),
+                    discord.SelectOption(label="Удалить приватные комнаты."),
+                    discord.SelectOption(label="Настроить комнаты."),
+                    ])
+                async def roomsactions(self, interaction: discord.Interaction, select: discord.ui.Select):
+                    if select.values[0] == 'Добавить приватные комнаты.':
+                        await interaction.response.defer(ephemeral= True, thinking= True)
+                        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='rooms')
+                        status = True
+                        if res.status:
+                            voice: discord.VoiceChannel = interaction.client.get_channel(int(res.value["voiceid"]))
+                            text: discord.TextChannel = interaction.client.get_channel(int(res.value["textid"]))
+                            category: discord.CategoryChannel = discord.utils.get(interaction.guild.categories, id=int(res.value["catid"]))
+                            if not voice or not text or not category:
+                                await interaction.client.bd.remove({'guildid': interaction.guild.id}, category='rooms')
+                                status = False
+                        if not status or not res.status:
+                            category = await interaction.guild.create_category(name='- Приватные комнаты -', reason='private rooms')
+                            channel = await category.create_voice_channel(name='Создать канал [+]', reason='private rooms', user_limit=1)
+                            channel2 = await category.create_text_channel(name='Управление📡', reason='private rooms')
+                            # --------------------------------------------
+                            embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message))
+                            embed.title = 'Приватные комнаты.'
+                            description = f'`👪 Изменить лимит канала.`\t`🚮 Забрать/Выдать доступ.`\n`💁‍♂️ Передать владельца.`\t`🚪 Скрыть/Открыть комнату.`\n`📝 Изменить название.`\t`🎙️ Заглушить/разглушить кого-то.`'
+                            embed.description = description
+                            await channel2.send(embed=embed, view=RoomActions())
+                            # --------------------------------------------
+                            await interaction.client.bd.add({'guildid': interaction.guild.id, 'voiceid': channel.id, 'catid': category.id, 'textid': channel2.id}, category='rooms')
+                            embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message))
+                            embed.description = '`Приватные голосовые комнаты успешно созданы.`'
+                            await interaction.followup.send(embed=embed, ephemeral=True)
+                        else:
+                            embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message), format='error')
+                            embed.description = f'`Эта функция уже включена на этом сервере.`\n`Канал:` <#{res.value["voiceid"]}>'
+                            await interaction.followup.send(embed=embed, ephemeral=True)
+                    elif select.values[0] == 'Удалить приватные комнаты.':
+                        await interaction.response.defer(ephemeral= True, thinking= True)
+                        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='rooms')
+                        if not res.status:
+                            embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message), format='error')
+                            embed.description = '`Чтобы удалить систему приватных комнат, ее нужно для начала создать.`'
+                            await interaction.followup.send(embed=embed, ephemeral=True)
+                        else:
+                            category: discord.CategoryChannel = discord.utils.get(interaction.guild.categories, id=int(res.value['catid']))
+                            with suppress(Exception):
+                                for x in category.channels:
+                                    await x.delete()
+                                await category.delete()
+                            await interaction.client.bd.remove({'guildid': interaction.guild.id}, category='rooms')
+                            embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message))
+                            embed.description = '`Система приватных комнат успешно удалена.`'
+                            await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            embed = ViolaEmbed(ctx = await interaction.client.get_context(interaction.message))
+            embed.description = '>>> Выберите одно из доступных действий:'
+            await interaction.followup.send(embed=embed, view=RoomsCallback(), ephemeral=True)
+        elif select.values[0] == 'Настройка приветствия.':
+            class Welcome(discord.ui.View):
+                def __init__(self) -> None:
+                    super().__init__(timeout=None)
+                @discord.ui.select(placeholder='Выберите опцию...', options=[
+                    discord.SelectOption(label="Указать канал для приветствий."),
+                    discord.SelectOption(label="Отключить эту функцию."),
+                    discord.SelectOption(label="Просмотр состояния.")
+                    ])
+                async def welcome_screen(self, interaction: discord.Interaction, select: discord.ui.Select):
+                    if select.values[0] == 'Указать канал для приветствий.':
+                        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='welcome_channels')
+                        status = False
+                        if res.status:
+                            channel = interaction.client.get_channel(int(res.value["channelid"]))
+                            if channel is not None:
+                                return await interaction.response.send_message(f'Канал уже указан. <#{res.value["channelid"]}>', ephemeral=True)
+                            status = True
+                        if status or not res.status:
+                            await interaction.response.send_message(f'`Отправьте в чат id канала или упомяните его (#название_канала):`', ephemeral=True)
+                            try:
+                                msg = await interaction.client.wait_for('message', timeout=60.0, check=lambda m: m.author == interaction.user and m.channel.id == interaction.message.channel.id)
+                                await msg.delete()
+                            except asyncio.TimeoutError:
+                                with suppress(discord.errors.NotFound):
+                                    await msg.delete()
+                                return
+                            try:
+                                channel = interaction.client.get_channel(int(msg.content))
+                            except ValueError:
+                                return await interaction.followup.send(f'`Неверный формат. Убедитесь что ваше сообщение не содержит букв.`', ephemeral=True)
+                            if channel is not None and channel.type is discord.ChannelType.text:
+                                await interaction.client.bd.add({'guildid': interaction.guild.id, 'channelid': channel.id}, category='welcome_channels')
+                                await interaction.followup.send(f'`Канал приветствий указан:` <#{channel.id}>', ephemeral=True)
+                            else:
+                                await interaction.followup.send(f'`Канал не найден среди текстовых каналов этого сервера.`', ephemeral=True)
+                    elif select.values[0] == 'Отключить эту функцию.':
+                        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='welcome_channels')
+                        if res.status:
+                            await interaction.client.bd.remove({'guildid': interaction.guild.id}, category='welcome_channels')
+                            embed = ViolaEmbed()
+                            embed.title = 'Канал для приветствий.'
+                            embed.description = f'>>> Функция успешно отключена.✅'
+                            await interaction.response.send_message(embed=embed, ephemeral=True)
+                        else:
+                            embed = ViolaEmbed()
+                            embed.title = 'Канал для приветствий.'
+                            embed.description = f'>>> Канал приветствий на этом сервере не указан.'
+                            await interaction.response.send_message(embed=embed, ephemeral=True)
+                    elif select.values[0] == 'Просмотр состояния.':
+                        success = True
+                        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='welcome_channels')
+                        if res.status:
+                            channel = interaction.client.get_channel(int(res.value["channelid"]))
+                            if channel is None:
+                                await interaction.client.bd.remove({'guildid': interaction.guild.id}, category='welcome_channels')
+                                success = False
+                        embed = ViolaEmbed()
+                        embed.title = 'Канал для приветствий.'
+                        if res.status:
+                            embed.description = f'>>> Канал приветствий на этом сервере:\n<#{res.value["channelid"]}>'
+                        elif not res.status or not success:
+                            embed.description = f'>>> Канал приветствий на этом сервере не указан.'
+                        await interaction.response.send_message(embed=embed, ephemeral=True)
+            embed = ViolaEmbed(ctx = await interaction.client.get_context(interaction.message))
+            embed.description = ">>> Выберите ниже то что вам нужно."
+            embed.title = 'Настройка канала для приветствий.'
+            await interaction.response.send_message(embed=embed, view=Welcome(), ephemeral=True)
+        elif select.values[0] == 'Настройка прощания.':
+            class Bye(discord.ui.View):
+                def __init__(self) -> None:
+                    super().__init__(timeout=None)
+                @discord.ui.select(placeholder='Выберите опцию...', options=[
+                    discord.SelectOption(label="Указать канал для прощания."),
+                    discord.SelectOption(label="Отключить эту функцию."),
+                    discord.SelectOption(label="Просмотр состояния.")
+                    ])
+                async def bye_screen(self, interaction: discord.Interaction, select: discord.ui.Select):
+                    if select.values[0] == 'Указать канал для прощания.':
+                        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='bye_channels')
+                        status = False
+                        if res.status:
+                            channel = interaction.client.get_channel(int(res.value["channelid"]))
+                            if channel is not None:
+                                return await interaction.response.send_message(f'Канал уже указан. <#{res.value["channelid"]}>', ephemeral=True)
+                            status = True
+                        if status or not res.status:
+                            await interaction.response.send_message(f'`Отправьте в чат id канала или упомяните его (#название_канала):`', ephemeral=True)
+                            try:
+                                msg = await interaction.client.wait_for('message', timeout=60.0, check=lambda m: m.author == interaction.user and m.channel.id == interaction.message.channel.id)
+                                await msg.delete()
+                            except asyncio.TimeoutError:
+                                with suppress(discord.errors.NotFound):
+                                    await msg.delete()
+                                return
+                            try:
+                                channel = interaction.client.get_channel(int(msg.content))
+                            except ValueError:
+                                return await interaction.followup.send(f'`Неверный формат. Убедитесь что ваше сообщение не содержит букв.`', ephemeral=True)
+                            if channel is not None and channel.type is discord.ChannelType.text:
+                                await interaction.client.bd.add({'guildid': interaction.guild.id, 'channelid': channel.id}, category='bye_channels')
+                                await interaction.followup.send(f'`Канал для прощаний указан:` <#{channel.id}>', ephemeral=True)
+                            else:
+                                await interaction.followup.send(f'`Канал не найден среди текстовых каналов этого сервера.`', ephemeral=True)
+                    elif select.values[0] == 'Отключить эту функцию.':
+                        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='bye_channels')
+                        if res.status:
+                            await interaction.client.bd.remove({'guildid': interaction.guild.id}, category='bye_channels')
+                            embed = ViolaEmbed()
+                            embed.title = 'Канал для прощаний.'
+                            embed.description = f'>>> Функция успешно отключена.✅'
+                            await interaction.response.send_message(embed=embed, ephemeral=True)
+                        else:
+                            embed = ViolaEmbed()
+                            embed.title = 'Канал для прощаний.'
+                            embed.description = f'>>> Канал прощаний на этом сервере не указан.'
+                            await interaction.response.send_message(embed=embed, ephemeral=True)
+                    elif select.values[0] == 'Просмотр состояния.':
+                        success = True
+                        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='bye_channels')
+                        if res.status:
+                            channel = interaction.client.get_channel(int(res.value["channelid"]))
+                            if channel is None:
+                                await interaction.client.bd.remove({'guildid': interaction.guild.id}, category='bye_channels')
+                                success = False
+                        embed = ViolaEmbed()
+                        embed.title = 'Канал для прощаний.'
+                        if res.status:
+                            embed.description = f'>>> Канал прощаний на этом сервере:\n<#{res.value["channelid"]}>'
+                        elif not res.status or not success:
+                            embed.description = f'>>> Канал прощаний на этом сервере не указан.'
+                        await interaction.response.send_message(embed=embed, ephemeral=True)
+            embed = ViolaEmbed(ctx = await interaction.client.get_context(interaction.message))
+            embed.description = ">>> Выберите ниже то что вам нужно."
+            embed.title = 'Настройка канала для прощаний.'
+            await interaction.response.send_message(embed=embed, view=Bye(), ephemeral=True)
+        elif select.values[0] == 'Система логирования.':
+            embed = ViolaEmbed(ctx = await interaction.client.get_context(interaction.message))
+            embed.title = 'Система логирования'
+            embed.description = '>>> Выберите дествие:'
+            await interaction.response.send_message(embed=embed, view=Logs(), ephemeral=True)
+        elif select.values[0] == 'Система тикетов.':
+            class tickets(discord.ui.View):
+                def __init__(self) -> None:
+                    super().__init__(timeout=None)
+                @discord.ui.select(placeholder='Выберите опцию...', options=[
+                    discord.SelectOption(label="Добавить систему тикетов."),
+                    discord.SelectOption(label="Удалить систему тикетов."),
+                    discord.SelectOption(label="Настройка прав.")
+                    ])
+                async def ticktes(self, interaction: discord.Interaction, select: discord.ui.Select):
+                    if select.values[0] == 'Добавить систему тикетов.':
+                        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='tickets')
+                        if res.status:
+                            value = res.value
+                            category = discord.utils.get(interaction.guild.categories, id=int(value['catid']))
+                            channel = interaction.client.get_channel(int(value['channel_id']))
+                            if channel is not None and category is not None:
+                                embed = discord.Embed(title='Tickets.', description=f'Канал для тикетов: <#{channel.id}> , {channel.id}\nКатегория: {category.name}, {category.id}')
+                                embed.color = 0x00ffff
+                                return await interaction.response.send_message(embed=embed, ephemeral=True)
+                        category = await interaction.guild.create_category(name='-    Tickets    -', reason='tickets')
+                        channel = await category.create_text_channel(name='Create Ticket', reason='tickets')
+                        await channel.set_permissions(channel.guild.default_role, send_messages=False)
+                        await interaction.client.bd.remove({'guildid': interaction.guild.id}, category='tickets')
+                        await interaction.client.bd.add({'guildid': interaction.guild.id, 'catid': category.id, 'channel_id': channel.id}, category='tickets')
+                        embed = discord.Embed(color=discord.Color.green())
+                        embed.set_author(name='Tickets.', icon_url='https://w7.pngwing.com/pngs/680/355/png-transparent-icon-e-mail-e-mail-mail.png')
+                        embed.description = '`Чтобы создать тикет нажмите на кнопку ниже.`'
+                        try:
+                            embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{channel.guild.icon.url}')
+                        except Exception:
+                            embed.set_footer(text=f'{channel.guild.name}', icon_url=f'{interaction.client.user.avatar.url}')
+                        await channel.send(embed=embed, view=TicketButtons())
+                        await interaction.response.send_message(f'`Система тикетов создана. Канал:` <#{channel.id}>')
+                    elif select.values[0] == 'Удалить систему тикетов.':
+                        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='tickets')
+                        if res.status:
+                            category = discord.utils.get(interaction.guild.categories, id = int(res.value['catid']))
+                            channel = interaction.client.get_channel(int(res.value['channel_id']))
+                            res = await interaction.client.bd.remove({'guildid': int(interaction.guild.id)}, category='tickets')
+                            with suppress(discord.errors.NotFound, AttributeError):
+                                await channel.delete()
+                            with suppress(discord.errors.NotFound, AttributeError):
+                                await category.delete()
+                            with suppress(discord.errors.NotFound):
+                                return await interaction.response.send_message(f'`Система жалоб удалена участником` <@!{interaction.user.id}>')
+                        else:
+                            embed = discord.Embed(description='`Система тикетов не найдена.`')
+                            embed.color = 0x00ffff
+                            await interaction.response.send_message(embed=embed)
+                    elif select.values[0] == 'Настройка прав.':
+                        await interaction.response.send_message('`Отправьте в чат id ролей или упомяните их, чтобы они имели доступ к тикетам.`', ephemeral=True)
+                        try:
+                            msg: discord.Message = await interaction.client.wait_for('message', timeout=60.0, check=lambda m: m.author == interaction.user and m.channel == interaction.channel)
+                            await msg.delete()
+                        except asyncio.TimeoutError:
+                            return
+                        lst = []
+                        args = msg.content.split(' ')
+                        for i in args:
+                            arg = int(str(i).replace('<@&', '').replace('>', ''))
+                            role = interaction.guild.get_role(arg)
+                            if role is not None:
+                                lst.append(arg)
+                        if len(lst) == 0:
+                            await interaction.followup.send('`Что то пошло не так... Проверьте id ролей.`', ephemeral=True)
+                        await interaction.client.bd.remove({'guildid': interaction.guild.id}, category='ticketsperms')
+                        await interaction.client.bd.add({'guildid': interaction.guild.id, 'roles': lst}, category='ticketsperms')
+                        text = '**Роли Обновлены:**\n'
+                        for i in lst:
+                            text+=f'<@&{i}>\n'
+                        embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message), title='Права каналов для тикетов.', description=text)
+                        await interaction.followup.send(embed=embed)
+            embed = ViolaEmbed(ctx = await interaction.client.get_context(interaction.message))
+            embed.title = 'Система тикетов.'
+            embed.description = '>>> Выберите дествие:'
+            await interaction.response.send_message(embed=embed, view=tickets(), ephemeral=True)
+        elif select.values[0] == 'Статистика сервера.':
+            class stat(discord.ui.View):
+                def __init__(self) -> None:
+                    super().__init__(timeout=None)
+                @discord.ui.select(placeholder='Выберите опцию...', options=[
+                    discord.SelectOption(label="Добавить канал для количества участников."),
+                    discord.SelectOption(label="Удалить канал для количества участников."),
+                    ])
+                async def ticktes(self, interaction: discord.Interaction, select: discord.ui.Select):
+                    if select.values[0] == 'Удалить канал для количества участников.':
+                        res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='voicemembers')
+                        if res.status:
+                            channel = interaction.client.get_channel(int(res.value['voiceid']))
+                            if not channel.guild.id == interaction.guild.id:
+                                return await interaction.response.send_message(f'`Канал не найден.`', ephemeral=True)
+                            with suppress(discord.errors.Forbidden):
+                                await channel.delete()
+                            a = await interaction.client.bd.remove({'voiceid': int(res.value['voiceid'])}, category='voicemembers')
+                            guild = interaction.client.get_guild(int(channel.guild.id))
+                            if a.value > 0:
+                                return await interaction.response.send_message(f'`<#{channel.name}> Убран из каналов статистики на сервере` **{guild.name}**')
+                        else:
+                            return await interaction.response.send_message(f'`Канал для количества участников не найден.`', ephemeral=True)
+                    elif select.values[0] == 'Добавить канал для количества участников.':
+                        overwrites = {
+                            interaction.guild.default_role: discord.PermissionOverwrite(connect=False, view_channel=True)
+                        }
+                        channel = await interaction.guild.categories[0].create_voice_channel(name=f"Участников: {interaction.guild.member_count}", overwrites=overwrites)
+                        res = await interaction.client.bd.remove({'guildid': channel.guild.id}, category='voicemembers')
+                        await interaction.client.bd.add({'guildid': channel.guild.id, 'voiceid': channel.id}, category='voicemembers')
+                        if res.value == 0:
+                            await interaction.response.send_message(f'`Канал успешно добавлен. Канал:` <#{channel.id}>', ephemeral=True)
+                        else:
+                            await interaction.response.send_message(f'`Канал успешно обновлен. Канал:` <#{channel.id}>', ephemeral=True)
+            embed = ViolaEmbed(ctx = await interaction.client.get_context(interaction.message))
+            embed.title = 'Cтатистика сервера.'
+            embed.description = '>>> Выберите дествие:'
+            await interaction.response.send_message(embed=embed, view=stat(), ephemeral=True)
+        elif select.values[0] == 'Роли по реакциям.':
+            embed = ViolaEmbed(ctx = await interaction.client.get_context(interaction.message))
+            embed.description = '>>> Роли по реакции.\nВыберите нужную вам опцию:'
+            await interaction.response.send_message(embed=embed, view=Reactions(interaction_user=interaction.user), ephemeral=True)
 # Other --------------------------------------------------------------------------------------------
 class LavalinkVoiceClient(discord.VoiceClient):
     def __init__(self, client: commands.Bot, channel: discord.abc.Connectable) -> None:
@@ -1198,10 +1492,10 @@ class ViolaEmbed(discord.Embed):
                 self.set_footer(text=f'{self.ctx.guild.name}', icon_url=f'{self.ctx.guild.icon.url}')
             except Exception:
                 self.set_footer(text=f'{self.ctx.guild.name}', icon_url=f'{self.ctx.bot.user.avatar.url}')
-            try:
-                self.set_thumbnail(url=f'{self.ctx.guild.icon.url}')
-            except Exception:
-                self.set_thumbnail(url=self.ctx.bot.user.avatar.url)
+            # try:
+            #     self.set_thumbnail(url=f'{self.ctx.guild.icon.url}')
+            # except Exception:
+            #     self.set_thumbnail(url=self.ctx.bot.user.avatar.url)
         colors = {'success': discord.Color.green(), 'warning': discord.Color.yellow(), 'error': discord.Color.red()}
         titles = {'success': 'Успешно.', 'warning': 'Внимание.', 'error': 'Ошибка.'}
         urls = {
@@ -1209,5 +1503,5 @@ class ViolaEmbed(discord.Embed):
             'warning': 'https://cdn.discordapp.com/emojis/1006317089683951718.webp',
             'error': 'https://cdn.discordapp.com/emojis/1006317086471094302.webp'
         }
-        self.set_author(icon_url=urls[self.format], name=titles[self.format])
+        # self.set_author(icon_url=urls[self.format], name=titles[self.format])
         self.color = colors[self.format]

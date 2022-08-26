@@ -1,7 +1,7 @@
 import traceback, os, io
 import discord, asyncio, aiohttp
 import datetime
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, AsyncIterator
 from discord.ext import commands
 from Config.utils import Paginator
 from Config.assets.database import MongoDB
@@ -26,7 +26,7 @@ class Viola(commands.Bot):
         for i in persistents:
             self.add_view(i)
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
-        for filename in os.listdir(os.path.join(os.path.dirname(os.path.realpath(__file__)).replace('Config', ''), 'Cogs')):
+        for filename in os.listdir(os.path.join(os.getcwd().replace('Config', ''), 'Cogs')):
             if filename.endswith(".py"):
                 await self.load_extension(f"Cogs.{filename[:-3]}")
     
@@ -48,6 +48,13 @@ class Viola(commands.Bot):
             return f'{h:02d}:{m:02d}:{s:02d}'
         return f'{m:02d}:{s:02d}'
     
+    async def prefix_check(self, interaction: discord.Interaction, answer: str):
+        res = await self.bd.fetch({'guildid': interaction.guild.id}, category='prefixes')
+        if res.status:
+            return res.value['prefix'] == answer
+        else:
+            return 's!' == answer
+    
     async def get_marry_info(self, member: discord.Member) -> Optional[Dict[str, Any]]:
         res = await self.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='marry')
         if not res.status:
@@ -59,7 +66,7 @@ class Viola(commands.Bot):
             args = {'main': member.id, 'partner': res.value['partnerid'], 'date': res.value['date']}
             return args
     
-    async def get_welcome_image(self, member: discord.Member) -> discord.File:
+    async def get_welcome_image(self, member: discord.Member, format: str = 'welcome') -> discord.File:
         if not member.avatar:
             avatar_url = 'https://raw.githubusercontent.com/AdvertiseYourServer/Default-Discord-Avatars/master/4.png'
         else:
@@ -70,16 +77,22 @@ class Viola(commands.Bot):
             avatar = Image.open(io.BytesIO(await response.content.read())).resize((170, 170), 0).convert('RGBA')
             mask_im = Image.new("L", avatar.size, 0)
             draw = ImageDraw.Draw(mask_im)
+            ellipse = Image.open(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets', 'rgb.png')).convert('RGBA').resize((210, 210))
+            mask = Image.open(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets', 'rgbmask.png')).convert('L').resize((210, 210))
             text = ImageDraw.Draw(im)
-            text.text((220, 70), text='Добро пожаловать!', font=mainfont, fill=(255, 255, 255, 255))
-            text.ellipse((10, 35, 200, 220), fill='#fcf3ff')
+            if format == 'welcome':
+                text.text((220, 70), text='Добро пожаловать!', font=mainfont, fill=(255, 255, 255, 255))
+            elif format == 'bye':
+                text.text((220, 70), text='С тобой было приятно иметь дело!', font=mainfont, fill=(255, 255, 255, 255))
+            else:
+                raise ValueError('Invalid format')
+            im.paste(ellipse, (2, 22), mask=mask)
             draw.ellipse((0, 0, 170, 170), fill=255)
             im.paste(avatar, (20, 42), mask=mask_im)
             draw.ellipse((0, 0, 100, 100), fill=255)
-            class globals:
-                imgforfont= im.crop((210, 0, 750, 250))
+            self.imgforfont= im.crop((210, 0, 750, 250))
             def set_size(fontsize: int) -> Image.Image:
-                tmp=globals.imgforfont.copy()
+                tmp= self.imgforfont.copy()
                 font = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets', 'welcome_font.ttf'), size=fontsize)
                 imdraw = ImageDraw.Draw(tmp)
                 imdraw.text(text=f'{member.display_name}#{member.discriminator}', xy=(8, 115), font=font)
@@ -93,25 +106,26 @@ class Viola(commands.Bot):
                         if breaked:
                             break
                 if not breaked:
-                    globals.imgforfont = tmp
+                    self.imgforfont = tmp
                     return
                 else:
                     set_size(fontsize=fontsize-1)
             set_size(50)
-            im.paste(globals.imgforfont, (210, 0))
+            im.paste(self.imgforfont, (210, 0))
             image_bytes = io.BytesIO()
             im.save(image_bytes, format='PNG')
             image_bytes.seek(0)
-            return discord.File(image_bytes, filename=f'WelcomeScreen.png')
+            return discord.File(image_bytes, filename=f'{format}User.png')
     
-    async def get_all_voice_members(self) -> List[discord.Member]:
-        members = []
+    async def voice_members(self, bots: bool = False) -> AsyncIterator[discord.Member]:
         for g in self.guilds:
             for c in g.voice_channels:
                 for m in c.members:
-                    if not m.bot:   
-                        members.append(m)
-        return members
+                    if bots:
+                        yield m
+                    else:
+                        if not m.bot:
+                            yield m
     
     def GetLevel(self, amount: int) -> List[int]:
         amount += 1
