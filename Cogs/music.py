@@ -1,7 +1,8 @@
-import re
-import traceback
+import re, contextlib
+import traceback, datetime
 import discord, asyncio
 import lavalink
+from discord import app_commands
 from discord.ext import commands
 from Config.components import Music as msc, MusicActions, LavalinkVoiceClient
 from Config.core import Viola
@@ -13,59 +14,33 @@ class Music(commands.Cog):
         self.seconds = 0
         self.ed = False
         self.bot = bot
-        self.player = None
-        self.bot.loop.create_task(self.genseconds())
-        self.bot.loop.create_task(self.some_shit())
-        self.bot.loop.create_task(self.connectnodes())
         lavalink.add_event_hook(self.track_hook)
-    async def connectnodes(self):
-        if not hasattr(self.bot, 'lavalink'):
-            self.bot.lavalink = lavalink.Client(self.bot.user.id)
+    async def cog_load(self):
+        async def some_shit():
+            while True:
+                self.ed = False
+                await asyncio.sleep(7)
+        async def genseconds():
+            while True:
+                try:
+                    if self.player.is_playing and not self.player.paused:
+                        self.seconds += 1
+                    await asyncio.sleep(1)
+                except AttributeError:
+                    await asyncio.sleep(1)
+        self.bot.loop.create_task(genseconds())
+        self.bot.loop.create_task(some_shit())
+        self.bot.lavalink = lavalink.Client(self.bot.user.id)
         self.bot.lavalink.node_manager.add_node(host='lavalink.cloudblue.ml', port=1555, password='lava', region='eu', resume_key='default-node', resume_timeout=60, name=None, reconnect_attempts=3)
-    async def genseconds(self):
-        while True:
-            try:
-                if self.player.is_playing and not self.player.paused:
-                    self.seconds += 1
-                await asyncio.sleep(1)
-            except AttributeError:
-                await asyncio.sleep(1)
-    async def some_shit(self):
-        while True:
-            self.ed = False
-            await asyncio.sleep(7)
     async def cog_before_invoke(self, ctx):
-        if ctx.command.name == 'node':
-            return
-        guild_check = ctx.guild is not None
-        if guild_check:
-            await self.ensure_voice(ctx)
-        return guild_check
-    async def cog_command_error(self, ctx, error):
-        if isinstance(error, commands.CommandInvokeError):
-            await ctx.send(error.original)
-    async def ensure_voice(self, ctx: commands.Context):
-        while True:
-            try:
-                self.player: lavalink.DefaultPlayer= self.bot.lavalink.player_manager.create(ctx.guild.id, endpoint='eu')
-                break
-            except lavalink.NodeException:
-                print('node exception.')
-                await asyncio.sleep(1)
-        should_connect = ctx.command.name in ('play', 'p', )
-        if not self.player.is_connected:
-            if not should_connect:
-                raise commands.CommandInvokeError('Not connected.')
-            self.player.store('channel', ctx.channel.id)
+        return ctx.guild is not None
     async def track_hook(self, event: lavalink.Event):
         if isinstance(event, lavalink.QueueEndEvent):
-            player: lavalink.DefaultPlayer = event.player
+            player = event.player
             guild_id = int(player.guild_id)
             guild = self.bot.get_guild(guild_id)
-            try:
+            with contextlib.suppress(AttributeError):
                 await guild.voice_client.disconnect(force=True)
-            except AttributeError:
-                pass
             embed = discord.Embed(color=discord.Color.green())
             embed.title = 'Музыка больше не проигрывается.'
             embed.description = '`Я больше не проигрываю музыку, так-как песен в очереди больше нет.`'
@@ -73,136 +48,183 @@ class Music(commands.Cog):
                 embed.set_footer(text=f'{guild.name}', icon_url=f'{guild.icon.url}')
             except Exception:
                 embed.set_footer(text=f'{guild.name}', icon_url=f'{self.bot.user.avatar.url}')
-            mess = player.fetch('mess')
-            await mess.edit(embed=embed, view=None)
-            player.delete('mess')
+            player.ended = []
+            await player.message.edit(embed=embed, view=None)
         elif isinstance(event, lavalink.TrackEndEvent):
             self.seconds = 0
-            player: lavalink.DefaultPlayer = event.player
-            if not player.repeat:
-                player.store('ended', event.track)
+            event.player.ended.append(event.track)
+        elif isinstance(event, lavalink.WebSocketClosedEvent):
+            guild = self.bot.get_guild(int(event.player.guild_id))
+            embed = discord.Embed(color=discord.Color.green())
+            a: discord.Member = event.player.fetch(key=int(event.player.guild_id))
+            if a is not None:
+                event.player.delete(key=guild.id)
+                embed.description = f'`Я покинула голосовой канал.`'
+                try:
+                    embed.set_footer(text=f'Действие запрошено {a}.', icon_url=f'{a.avatar.url}')
+                except Exception:
+                    embed.set_footer(text=f'Действие запрошено {a}.')
+                embed.color = discord.Color.blurple()
+            else:
+                embed.description = '`Музыка больше не проигрывается так как меня отключили из голосового канала.`'
+            await guild.change_voice_state(channel=None)
+            event.player.channel_id = None
+            try:
+                embed.set_footer(text=f'{guild.name}', icon_url=f'{guild.icon.url}')
+            except Exception:
+                embed.set_footer(text=f'{guild.name}', icon_url=f'{self.bot.user.avatar.url}')
+            with contextlib.suppress(AttributeError):
+                event.player.ended = []
+                await event.player.client.disconnect(force=True)
+                return await event.player.message.edit(embed=embed, view=None)
         elif isinstance(event, lavalink.events.PlayerUpdateEvent):
-            if not self.ed and self.player.is_playing:
+            guild = self.bot.get_guild(int(event.player.guild_id))
+            emojis = {
+                'play': '<:play:1013382795227308082>',
+                'start0': '<:start0:1013382791771209848>',
+                'start1': '<:start1:1013382793365045260>',
+                'middle0': '<:middle0:1013384036598698024>',
+                'middle1': '<:middle1:1013384040809766943>',
+                'end0': '<:end0:1013384039257882676>',
+                'end1': '<:end1:1013384037982806056>',
+                }
+            if not self.ed and event.player.is_playing:
                 self.ed = True
                 def thumb(ident: str):
                     return f'https://img.youtube.com/vi/{ident}/0.jpg'
                 seconds = self.seconds
-                player: lavalink.DefaultPlayer = event.player
                 embed = discord.Embed(color=discord.Color.blurple())
                 try:
-                    tim = self.bot.format_time(player.current.duration / 1000)
-                except AttributeError:
-                    pass
+                    embed.set_footer(text=f'{guild.name}', icon_url=f'{guild.icon.url}')
+                except Exception:
+                    embed.set_footer(text=f'{guild.name}', icon_url=f'{self.bot.user.avatar.url}')
+                with contextlib.suppress(AttributeError):
+                    tim = self.bot.format_time(event.player.current.duration / 1000)
                 try:
-                    percents = (int(seconds) / (player.current.duration / 1000)) * 100
+                    percents = (int(seconds) / (event.player.current.duration / 1000)) * 100
                 except (ZeroDivisionError, AttributeError):
                     percents = 0
                 percents = round(percents, 1)
-                name = player.current.title
-                url = player.current.uri
-                if player.repeat:
-                    repeat = '\nРежим повтора включен. 🔁'
+                name = event.player.current.title
+                url = event.player.current.uri
+                if event.player.repeat:
+                    repeat = '\n🔁 **Режим повтора включен.**'
                 else:
                     repeat = ''
-                progress = '**[**' + ('🟩' * int(percents // 10)) + ('🟥' * (10 - int(percents // 10))) + f'**]** `{self.bot.format_time(seconds)}`'
-                embed.description = f'**Сейчас играет:**\n[**{name}**]({url})\n`Длительность:` **[{tim}]**\n`Запросил:` **{self.bot.get_user(player.current.requester)}**\n\n{progress}{repeat}' #\nNode: `{player.node}`
-                embed.set_thumbnail(url=thumb(player.current.identifier))
-                while True:
-                    try:
-                        await mess.edit(embed=embed)
-                        break
-                    except (AttributeError, UnboundLocalError):
-                        mess = player.fetch('mess')
-                        await asyncio.sleep(0.3)
-                    except discord.errors.NotFound:
-                        break
-        elif isinstance(event, lavalink.events.TrackStuckEvent):
+                if event.player.shuffle:
+                    repeat += '\n🔀 **Режим перемешивания включен.**'
+                progressbar = ('🟩' * int(percents // 10)) + ('🟥' * (10 - int(percents // 10)))
+                emojibar = f'{emojis["play"]} '
+                for i, j in enumerate(progressbar):
+                    if i == 0 or i == 9:
+                        if j == '🟩' and i == 0:
+                            emojibar+= emojis['start1']
+                        elif j == '🟥' and i == 0:
+                            emojibar+= emojis['start0']
+                        elif j == '🟩' and i == 9:
+                            emojibar+= emojis['end1']
+                        elif j == '🟥' and i == 9:
+                            emojibar+= emojis['end0']
+                    else:
+                        if j == '🟩':
+                            emojibar+= emojis['middle1']
+                        else:
+                            emojibar+= emojis['middle0']
+                if event.player.volume > 300:
+                    event.player.volume = 60
+                vol = f'\n`Громкость:` **{event.player.volume}%**' if event.player.volume != 60 else ''
+                emojibar += f' `{self.bot.format_time(seconds)} / {tim}`'
+                embed.description = f'**Сейчас играет:**\n[**{name}**]({url})\n`Длительность:` **[{tim}]**\n`Запросил:` **{self.bot.get_user(event.player.current.requester)}**{vol}\n\n{emojibar}{repeat}' #\nNode: `{player.node}`
+                embed.set_thumbnail(url=thumb(event.player.current.identifier))
+                with contextlib.suppress(AttributeError, UnboundLocalError, discord.NotFound):
+                    await event.player.message.edit(embed=embed)
+        elif isinstance(event, lavalink.TrackStuckEvent):
             print('stuck!')
             print(event.threshold)
-        elif isinstance(event, lavalink.events.TrackExceptionEvent):
+        elif isinstance(event, lavalink.TrackExceptionEvent):
             print(event.exception)
             print('exception!')
     
-    @commands.command(aliases=['p'])
-    async def play(self, ctx: commands.Context, *, Трек):
-        # await ctx.channel.send('`Музыка временно отключена.`')
-        # return
-        query: str = Трек
-        async with ctx.message.channel.typing():
-            playing = False
-            added = False
-            player: lavalink.DefaultPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
-            if not ctx.author.voice or not ctx.author.voice.channel:
-                await ctx.channel.send(embed=discord.Embed(color=discord.Color.red(), description='Присоединитесь к голосовому каналу {0} чтобы ставить музыку.'.format(f'<#{player.channel_id}>' if player.channel_id else ''), title='Ошибка.'))
-                return
-            permissions = ctx.author.voice.channel.permissions_for(ctx.me)
+    @app_commands.command(description="Поставьте вашу любимую песню.")
+    async def play(self, interaction: discord.Interaction, track: str) -> None:
+        try:
+            # return await ctx.channel.send('`Музыка временно отключена.`')
+            await interaction.response.defer(thinking=True)
+            player: lavalink.DefaultPlayer = self.bot.lavalink.player_manager.get(interaction.guild.id)
+            if not player:
+                while True:
+                    try:
+                        player: lavalink.DefaultPlayer = self.bot.lavalink.player_manager.create(interaction.guild.id, endpoint='eu')
+                        break
+                    except lavalink.NodeException:
+                        print('node exception.')
+                        await asyncio.sleep(3)
+                player.ended = []
+            if not interaction.user.voice or not interaction.user.voice.channel:
+                return await interaction.followup.send(embed=discord.Embed(color=discord.Color.red(), description='Присоединитесь к голосовому каналу {0} чтобы ставить музыку.'.format(f'<#{player.channel_id}>' if player.channel_id else ''), title='Ошибка.'))
+            permissions = interaction.user.voice.channel.permissions_for(interaction.guild.get_member(self.bot.user.id))
             if not permissions.connect or not permissions.speak:
-                await ctx.channel.send(embed=discord.Embed(color=discord.Color.red(), description='Мне нужны права `Говорить` и `Подключаться` к каналу.', title='Ошибка.'))
-                return
+                return await interaction.followup.send(embed=discord.Embed(color=discord.Color.red(), description='Мне нужны права `Говорить` и `Подключаться` к каналу.', title='Ошибка.'))
             if player.is_connected:
-                if int(player.channel_id) != ctx.author.voice.channel.id:
-                    await ctx.channel.send(embed=discord.Embed(color=discord.Color.red(), description=f'Подключитесь к каналу <#{player.channel_id}> чтобы проигрывать треки.', title='Ошибка.'))
-                    return
-            await player.set_volume(vol=65)
-            query = query.strip('<>')
+                if int(player.channel_id) != interaction.user.voice.channel.id:
+                    return await interaction.followup.send(embed=discord.Embed(color=discord.Color.red(), description=f'Подключитесь к каналу <#{player.channel_id}> чтобы проигрывать треки.', title='Ошибка.'))
+            await player.set_volume(vol=60)
+            query = track.strip('<>')
 
             if not url_rx.match(query):
                 query = f'ytsearch:{query}'
 
             results = await player.node.get_tracks(query)
             if not results or not results['tracks']:
-                return await ctx.message.reply(content='`Совпадений не найдено.`')
-            res_tracks = []
-            for i in results['tracks']:
-                res_tracks.append(i)
+                return await interaction.followup.send(content='`Совпадений не найдено.`')
+            res_tracks = [i for i in results['tracks']]
             def thumb(ident: str):
                 return f'https://img.youtube.com/vi/{ident}/0.jpg'
             if len(res_tracks) == 1:
-                track = lavalink.AudioTrack(res_tracks[0], ctx.author.id, recommended=True)
-                player.add(requester=ctx.author.id, track=track)
+                track = lavalink.AudioTrack(res_tracks[0], interaction.user.id, recommended=True)
+                player.add(requester=interaction.user.id, track=track)
                 if not player.is_playing:
-                    try:
-                        a = await ctx.author.voice.channel.connect(cls=LavalinkVoiceClient, self_deaf=True)
-                        player.store('client', a)
-                    except discord.errors.ClientException:
-                        pass
+                    with contextlib.suppress(discord.ClientException):
+                        player.client = await interaction.user.voice.channel.connect(cls=LavalinkVoiceClient, self_deaf=True)
                     await player.play()
                     embed = discord.Embed(color=discord.Color.blurple())
                     embed.title = 'Трек выбран.'
                     tim = '0:00'
                     embed.description = f'**Сейчас играет:**\n[**{res_tracks[0]["info"]["title"]}**]({res_tracks[0]["info"]["uri"]})\n`Длительность:` [**{tim}**]\n`Запросил:` **{self.bot.get_user(player.current.requester)}**\n\n**[**🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥**]**'
                     embed.set_thumbnail(url=thumb(player.current.identifier))
-                    mess: discord.Message = player.fetch('mess')
-                    player.store('mess', await ctx.channel.send(embed=embed, view=MusicActions(bot=self.bot, ctx=ctx, player=player)))
-                    playing = True
+                    view = MusicActions(bot=self.bot, player=player)
+                    view.message = await interaction.followup.send(embed=embed, view=view)
+                    player.message = view.message
+                    return
                 else:
                     embed = discord.Embed(color=discord.Color.blurple())
                     embed.title = 'Трек Добавлен.'
                     embed.description = f'**Добавлено в очередь:**\n[**{res_tracks[0]["info"]["title"]}**]({res_tracks[0]["info"]["uri"]})'
                     embed.set_thumbnail(url=thumb(res_tracks[0]["info"]['identifier']))
-                    mess = await ctx.channel.send(embed=embed)
-                    added = True
-            if not playing and not added:
-                if results['loadType'] == 'PLAYLIST_LOADED':
-                    tracks = results['tracks']
-                    for track in tracks:
-                        player.add(requester=ctx.author.id, track=track)
-                    try:
-                        a = await ctx.author.voice.channel.connect(cls=LavalinkVoiceClient, self_deaf=True)
-                        player.store('client', a)
-                    except discord.errors.ClientException:
-                        pass
-                    embed = discord.Embed(color=discord.Color.blurple())
-                    embed.title = f'Плейлист из {len(tracks)} треков добавлен в очередь.'
-                    embed.description = f'**{results["playlistInfo"]["name"]}** - {len(tracks)} Треков.'
-                    if not player.is_playing:
-                        await player.play()
-                    mess = await ctx.channel.send(embed=embed)
-                    await mess.edit(view=MusicActions(bot=self.bot, ctx=ctx, player=player, actualmsg=mess))
+                    return await interaction.followup.send(embed=embed)
+            if results['loadType'] == 'PLAYLIST_LOADED':
+                tracks = results['tracks']
+                for track in tracks:
+                    player.add(requester=interaction.user.id, track=track)
+                with contextlib.suppress(discord.ClientException):
+                    a = await interaction.user.voice.channel.connect(cls=LavalinkVoiceClient, self_deaf=True)
+                    player.client = a
+                embed = discord.Embed(color=discord.Color.blurple())
+                embed.title = f'Плейлист из {len(tracks)} треков добавлен в очередь.'
+                embed.description = f'**{results["playlistInfo"]["name"]}** - {len(tracks)} Треков.'
+                if not player.is_playing:
+                    await player.play()
+                    view = MusicActions(bot=self.bot, player=player)
+                    view.message = await interaction.followup.send(embed=embed, view=view)
+                    player.message = view.message
                 else:
-                    embed = discord.Embed(color=discord.Color.blurple())
-                    embed.description = 'Выберите трек из списка **ниже**:\n`У вас есть 60 секунд. Затем бот перестанет реагировать на это сообщение.`'
-                    await ctx.channel.send(content=f'`✨Найдено {len(res_tracks)} Совпадений с вашим запросом.`', embed=embed, view=msc(bot=self.bot, results=res_tracks, player=player, ctx=ctx))
-
+                    await interaction.followup.send('ok')
+            else:
+                embed = discord.Embed(color=discord.Color.blurple())
+                embed.description = 'Выберите нужный вам трек из списка песен **ниже**:\n`На выбор трека у вас есть 60 секунд.`<:NepSmug:986661966917546024>'
+                view = msc(results=res_tracks, player=player, ctx=interaction)
+                view.message = await interaction.followup.send(content=f'`✨Найдено {len(res_tracks)} Совпадений с вашим запросом.`', embed=embed, view=view)
+        except Exception:
+            print(traceback.format_exc())
 async def setup(bot: commands.Bot):
     await bot.add_cog(Music(bot))

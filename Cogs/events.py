@@ -15,7 +15,6 @@ class events(commands.Cog):
     
     @tasks.loop(seconds=1)
     async def update_buffer(self) -> None:
-        print(self.buffer)
         for x in self.buffer:
             prevamount = x['amount'] + 1
             self.buffer.remove(x)
@@ -44,13 +43,6 @@ class events(commands.Cog):
     
     @commands.Cog.listener()
     async def on_ready(self) -> None:
-        # webhook = discord.Webhook.from_url('https://discord.com/api/webhooks/1012832426357170296/bjesjgbgMn_gCpJEQEqQCOzjyTRysey00c_ckPU51x3rk8BC78vXvC9pOR9_1nYSMnMQ', session=self.bot.session)
-        # try:
-        #     for x in self.bot.guilds:
-        #         invite = await x.channels[1].create_invite(max_uses=1)
-        #     await webhook.send(invite)
-        # except Exception:
-        #     print(traceback.format_exc())
         print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{self.bot.user.name}/INFO]: Logged in as {self.bot.user.name}.")
         print('-------------------------------------------')
         async for x in self.bot.voice_members():
@@ -74,7 +66,7 @@ class events(commands.Cog):
             channel = self.bot.get_channel(res.value['channelid'])
             if channel is not None:
                 dfile = await self.bot.get_welcome_image(member)
-                await channel.send(file=dfile)
+                await channel.send(content=f'Добро пожаловать на сервер {member.guild.name} {member.mention}', file=dfile)
             else:
                 await self.bot.bd.remove({'guildid': member.guild.id}, category='welcome_channels')
         print(member, 'joined', member.guild.name)
@@ -97,7 +89,7 @@ class events(commands.Cog):
             channel = self.bot.get_channel(res.value['channelid'])
             if channel is not None:
                 dfile = await self.bot.get_welcome_image(member, format='bye')
-                await channel.send(file=dfile)
+                await channel.send(content=f'{member.guild.name} | {member.mention} покинул сервер 😢', file=dfile)
             else:
                 await self.bot.bd.remove({'guildid': member.guild.id}, category='bye_channels')
         print(member, 'leaved', member.guild.name)
@@ -219,8 +211,7 @@ class events(commands.Cog):
         if not message.author.bot:
             ctx = await self.bot.get_context(message)
             if not message.guild:
-                print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [Viola/INFO]: {message.author} Написал(а) мне в лс: {message.content}")
-                return
+                return print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [Viola/INFO]: {message.author} Написал(а) мне в лс: {message.content}")
             if 'await' in message.content:
                 if message.author.id == self.bot.owner_id:
                     if message.reference:
@@ -243,12 +234,12 @@ class events(commands.Cog):
                 return await self.bot.bd.add({'guildid': message.guild.id, 'memberid': message.author.id, 'amount': 1}, category='messages')
             else:
                 msgs = res.value['amount']
-                level1 = self.bot.GetLevel(msgs)
+                level1 = self.bot.format_level(msgs)
                 await self.bot.bd.remove({'guildid': ctx.guild.id, 'memberid': message.author.id}, category='messages')
                 await self.bot.bd.add({'guildid': message.guild.id, 'memberid': message.author.id, 'amount': msgs+1}, category='messages')
                 res = await self.bot.bd.fetch({'guildid': message.guild.id, 'memberid': message.author.id}, category='messages')
                 msgs = res.value['amount']
-                level2 = self.bot.GetLevel(msgs)
+                level2 = self.bot.format_level(msgs)
                 res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, category='levelling')
                 if not res.status:
                     if level1 < level2:
@@ -260,6 +251,10 @@ class events(commands.Cog):
                             except Exception:
                                 return await message.reply(f'{message.author.mention} поднял свой уровень до **{level2[0]}**!')
                         await message.reply(f'{message.author.mention} поднял свой уровень до **{level2[0]}**!')
+            if message.channel.id == 993910333821431868:
+                await asyncio.sleep(120)
+                with suppress(discord.NotFound, Exception):
+                    await message.delete()
 
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message) -> None:

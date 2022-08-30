@@ -9,8 +9,7 @@ apikey = os.environ.get('APIKEY')
 # -------------------------------------------------------------------------------------------
 class Hypixel(commands.Cog, description='Hypixel related commands.'):
     def __init__(self, bot: Viola):
-        self.bot = bot
-    
+        self.bot = bot  
     @commands.command(aliases = ['gtop', ])
     async def guild_top(self, ctx, *info):
         if not info:
@@ -63,7 +62,6 @@ class Hypixel(commands.Cog, description='Hypixel related commands.'):
             print(traceback.format_exc())
             embed = discord.Embed(title='Ошибка', description=f"`{e}`", color=discord.Color.red())
             await message.edit(embed=embed)
-    
     class Gtop:
         def __init__(self, name):
             self.name = name
@@ -109,7 +107,7 @@ class Hypixel(commands.Cog, description='Hypixel related commands.'):
         try:
             try:
                 response = requests.get(f"https://api.hypixel.net/player?key={apikey}&uuid={requests.get(f'https://api.mojang.com/users/profiles/minecraft/{username}').json()['id']}").json()
-            except requests.exceptions.JSONDecodeError:
+            except requests.JSONDecodeError:
                 return 404
             return response['player']['socialMedia']['links']['DISCORD']
         except KeyError:
@@ -120,20 +118,17 @@ class Hypixel(commands.Cog, description='Hypixel related commands.'):
         dis = self.getDiscord(name)
         if dis == 404:
             embed = discord.Embed(title = 'Ошибка', description = f"`Игрок {name} Не найден.`", color = discord.Color.red())
-            await ctx.send(embed = embed)
-            return
+            return await ctx.channel.send(embed = embed)
         if str(dis) == str(ctx.author):
             uuid = requests.get(f'https://api.mojang.com/users/profiles/minecraft/{name}').json()['id']
             res = await self.bot.bd.fetch({'uuid': uuid}, category='linked')
             res2 = await self.bot.bd.fetch({'ctxid': ctx.author.id}, category='linked')
             if res.status:
                 name = requests.get(f"https://api.mojang.com/user/profiles/{uuid}/names").json()[-1]['name']
-                await ctx.send(f'`Account {name} already linked. linked id: {res.value["ctxid"]}`')
-                return
+                return await ctx.send(f'`Аккаунт {name} уже привязан. Владелец: {self.bot.fetch_user(int(res.value["ctxid"]))}`')
             if res2.status:
                 name = requests.get(f'https://api.mojang.com/user/profiles/{res.value["uuid"]}/names').json()[-1]['name']
-                await ctx.send(f'`Your account already linked with {name}`')
-                return
+                return await ctx.send(f'`Ваш аккаунт уже привязан к {name}`')
             await ctx.send('`Ваш аккаунт успешно привязан.`')
             await self.bot.bd.add({"ctxid": ctx.author.id, "uuid": uuid}, category='linked')
         else:
@@ -394,34 +389,34 @@ class Hypixel(commands.Cog, description='Hypixel related commands.'):
                 except Exception as e:
                     time.sleep(0.01)
             # Rank Information
-            def GetRank(response):
+            def GetRank(response: dict):
                 if self.username.lower() == 'technoblade':
                     return 'PIG+++'
                 try:
                     try:
-                        if self._response['player']['monthlyPackageRank'] == "SUPERSTAR":
+                        if response['player']['monthlyPackageRank'] == "SUPERSTAR":
                             return "MVP++"
                     except Exception:
                         pass
                     try:
-                        if self._response['player']['packageRank'] == "MVP_PLUS":
+                        if response['player']['packageRank'] == "MVP_PLUS":
                             return "MVP+"
                     except Exception:
                         pass
-                    if self._response['player']['rank'] == "YOUTUBER":
+                    if response['player']['rank'] == "YOUTUBER":
                         return "YouTube"
-                    elif self._response['player']['rank'] == "ADMIN":
+                    elif response['player']['rank'] == "ADMIN":
                         return "Admin"
                 except Exception:
                     pass
                 try:
-                    if self._response['player']['newPackageRank'] == 'VIP_PLUS':
+                    if response['player']['newPackageRank'] == 'VIP_PLUS':
                         return "VIP+"
-                    elif self._response['player']['newPackageRank'] == 'MVP_PLUS':
+                    elif response['player']['newPackageRank'] == 'MVP_PLUS':
                         return "MVP+"
-                    elif self._response['player']['newPackageRank'] == 'VIP':
+                    elif response['player']['newPackageRank'] == 'VIP':
                         return "VIP"
-                    elif self._response['player']['newPackageRank'] == 'MVP':
+                    elif response['player']['newPackageRank'] == 'MVP':
                         return "MVP"
                     else:
                         pass

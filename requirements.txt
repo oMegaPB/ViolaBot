@@ -11,3 +11,4 @@ beautifulsoup4==4.11.1
 python-magic==0.4.27
 lxml==4.9.1
 pandas==1.4.3
+aiofiles==0.8.0

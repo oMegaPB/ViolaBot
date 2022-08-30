@@ -1,7 +1,7 @@
 import discord, aiohttp, datetime, os, asyncio, random, traceback, io, magic, re, time, pandas
 from discord.ext import commands
 from contextlib import suppress
-from Config.utils import YT, ACRcloud, HerokuRecognizer
+from Config.utils import yt_search, ACRcloud, HerokuRecognizer
 from typing import List
 from discord.ext.commands import has_permissions
 from Config.components import SetInfo, ViolaEmbed, OnSettings
@@ -13,7 +13,22 @@ from discord.http import Route
 class cmds(commands.Cog, description='**Основные команды бота.**'):
     def __init__(self, bot: Viola):
         self.bot = bot
-    
+    async def cog_load(self):
+        self.uptime = time.time()
+    @commands.command()
+    async def whatsit(self, ctx: commands.Context):
+        async with ctx.channel.typing():
+            if len(ctx.message.attachments) > 1:
+                return await ctx.message.reply('`Вы можете прикрепить только один файл.`')
+            elif len(ctx.message.attachments) == 0:
+                return await ctx.message.reply('`Вам нужно прикрепить файл.`')
+            with io.BytesIO(await ctx.message.attachments[0].read()) as data:
+                typo = await self.bot.loop.run_in_executor(None, magic.from_buffer, data.read())
+            name = ctx.message.attachments[0].filename
+            embed = ViolaEmbed(ctx=ctx)
+            embed.description = f'`{name} Имеет следующую сигнатуру:`\n\n>>> ---\n**{typo}**\n---'
+            await ctx.message.reply(embed=embed)
+        
     @commands.command(description="Прикрепите отрывок песни или целую песню, введите эту команду и бот попытается угадать ее название, исполнителя и показать ютуб статистику.")
     async def recognize(self, ctx: commands.Context):
         async with ctx.channel.typing():
@@ -21,14 +36,15 @@ class cmds(commands.Cog, description='**Основные команды бота
                 if len(ctx.message.attachments) > 1:
                     return await ctx.message.reply('`Вы можете прикрепить только один файл.`')
                 elif len(ctx.message.attachments) == 0:
-                    return await ctx.message.reply('`Прикрепите хотя бы один файл.`')
+                    return await ctx.message.reply('`Вам нужно прикрепить файл.`')
                 embed=ViolaEmbed(ctx=ctx, format='warning')
-                embed.description = 'Ожидайте...'
+                embed.description = 'Ожидайте...\n*Процесс может занять до 30 секунд...*'
+                embed.set_author(name=f'{ctx.message.attachments[0].filename}', url='https://cdn.discordapp.com/emojis/1010919398044872725.gif?size=128&quality=lossless')
                 mess = await ctx.channel.send(embed=embed)
                 a = await ctx.message.attachments[0].read()
                 with io.BytesIO(a) as audio_data:
                     accepted = ['Audio file with ID3', 'Ogg data', 'WAVE audio', 'MPEG ADTS']
-                    typo = magic.from_buffer(audio_data.read())
+                    typo = await self.bot.loop.run_in_executor(None, magic.from_buffer, audio_data.read())
                     if not (accepted[0] in typo or accepted[1] in typo or accepted[2] in typo or accepted[3] in typo):
                         embed = ViolaEmbed(ctx=ctx, format='error')
                         embed.description = f'`Формат файла не поддерживается.`\n(**{typo}**)\n`Поддерживаемые файлы: .ogg .wav .mp3 .adts`'
@@ -48,8 +64,7 @@ class cmds(commands.Cog, description='**Основные команды бота
                             return await mess.edit(embed=embed)
                         except discord.errors.NotFound:
                             return await ctx.channel.send(embed=embed)
-                    yt = YT()
-                    yt = await yt.getYT(f'{song.title} - {song.author}')
+                    yt = await yt_search(f'{song.title} - {song.author}')
                     embed = ViolaEmbed(ctx=ctx)
                     embed.set_thumbnail(url=song.thumbnail_url)
                     description = f'`Найдено совпадение:`\n`Название:` **{song.title}**\n`Исполнитель:` **{song.author}**'
@@ -60,139 +75,144 @@ class cmds(commands.Cog, description='**Основные команды бота
                     except discord.errors.NotFound:
                         return await ctx.channel.send(embed=embed)
             except Exception as e:
-                await ctx.channel.send(f'`{e}`, {type(e)}')
-    
+                embed = ViolaEmbed(ctx=ctx, format='error')
+                embed.description = f'`{e if isinstance(e, str) and e != "" else "undefined error happened..."}`\n**{e.__class__.__name__}**'
+                await mess.edit(embed=embed)
+
     @commands.command(description="Вспомогательная утилита.\nУдаляет дискорд вебхуки.\nПример: `s!webhookdel https://discord.com/api/webhooks/\n1007626877843812362/j_O-_9JiaC7JTiAquW15\nvZb8PaO0mLlujEplsgwVnM3710O\nUBEePhToo1c-UJVcnvpcV`")
     async def webhookdel(self, ctx: commands.Context, url):
-        m = re.search(r'discord(?:app)?.com/api/webhooks/(?P<id>[0-9]{17,20})/(?P<token>[A-Za-z0-9\.\-\_]{60,68})', url)
-        if m is None:
-            await ctx.message.reply('`Укажите достоверный url вебхука.`')
-            return
-        async with self.bot.session.delete(url) as response:
-            await ctx.message.reply(f'`Действие выполнено со статусом` **{response.status}**')
+        async with ctx.channel.typing():
+            m = re.search(r'discord(?:app)?.com/api/webhooks/(?P<id>[0-9]{17,20})/(?P<token>[A-Za-z0-9\.\-\_]{60,68})', url)
+            if m is None:
+                return await ctx.message.reply('`Укажите достоверный url вебхука.`')
+            async with self.bot.session.delete(url) as response:
+                await ctx.message.reply(f'`Действие выполнено со статусом` **{response.status}**')
     
     @commands.command(description="Команда.\nУзнайте топ сервера по голосовой активности и по опыту.\nПример: `s!top voice` топ сервера по голосу.")
     async def top(self, ctx: commands.Context, *category):
-        if not category:
-            # embeds = [discord.Embed(color=discord.Color.red(), description='1'), discord.Embed(color=discord.Color.green(), description='2'), discord.Embed(color=discord.Color.blurple(), description='3')]
-            embeds: List[discord.Embed] = []
-            try:
-                buffer = []
-                res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, mode='all', category='messages')
-                for x in res.value:
-                    buffer.append({'memberid': x['memberid'], 'amount': x['amount']})
-                buffer = sorted(buffer, key = lambda x: x['amount'])
-                buffer = buffer[::-1]
-                embed = discord.Embed(color=discord.Color.green())
-                embed.title = f'Топ сервера {ctx.guild.name} по сообщениям.✍️'
-                description = ''
-                count = 0
-                # --------------------------
-                for i in buffer:
-                    count += 1
-                    if count % 6 == 0:
-                        embed.description = description
-                        embeds.append(embed)
-                        embed = discord.Embed(color=discord.Color.green())
-                        embed.title = f'Топ сервера {ctx.guild.name} по сообщениям.✍️'
-                        embed.description = ''
-                        description = ''
-                    try:
-                        member = ctx.guild.get_member(int(i['memberid']))
-                    except:
-                        member = None
-                        member = await self.bot.fetch_user(int(i['memberid']))
-                        try:
-                            memberi = f'{member.name}#{member.discriminator} (Вышел)'
-                        except AttributeError:
-                            memberi = f'<@!{int(i["memberid"])}> (Вышел)'
-                        level = self.bot.GetLevel(i['amount'])
-                        description += f'**#{count}.** `{memberi}`\n`Уровень:` **{level[0]}** | `Опыт:` **({i["amount"]*3}/{level[1]*3})**\n\n'
-                        continue
-                    level = self.bot.GetLevel(i['amount'])
-                    description += f'**#{count}.** **{member.nick if member.nick else member.name}**\n`Уровень:` **{level[0]}** | `Опыт:` **({i["amount"]*3}/{level[1]*3})**\n\n'
-                embed.description = description
-                embeds.append(embed)
-                if len(embeds) > 1:
-                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0], view=Paginator(embeds=embeds, ctx=ctx, bot=self.bot))
-                else:
-                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0])
-            except Exception:
-                print(traceback.format_exc())
-            return
-        if category[0] == 'voice':
-            embeds: List[discord.Embed] = []
-            try:
-                buffer = []
-                res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, mode='all', category='voice')
-                for x in res.value:
-                    buffer.append({'memberid': x['memberid'], 'amount': x['amount']})
-                buffer = sorted(buffer, key = lambda x: x['amount'])
-                buffer = buffer[::-1]
-                embed = discord.Embed(color=discord.Color.green())
-                embed.title = f'Топ сервера {ctx.guild.name} по голосу.🎙️'
-                description = ''
-                count = 0
-                # --------------------------
-                buffer2 = []
-                res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, mode='all', category='messages')
-                if res.status:
+        async with ctx.channel.typing():
+            if not category:
+                # embeds = [discord.Embed(color=discord.Color.red(), description='1'), discord.Embed(color=discord.Color.green(), description='2'), discord.Embed(color=discord.Color.blurple(), description='3')]
+                embeds: List[discord.Embed] = []
+                try:
+                    buffer = []
+                    res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, mode='all', category='messages')
                     for x in res.value:
-                        buffer2.append({'memberid': x['memberid'], 'amount': x['amount']})
-                # --------------------------
-                for i in buffer:
-                    if int(i['amount']) == 0:
-                        continue
-                    count += 1
-                    if count % 6 == 0:
-                        embed.description = description
-                        embeds.append(embed)
-                        embed = discord.Embed(color=discord.Color.green())
-                        embed.title = f'Топ сервера {ctx.guild.name} по голосу.🎙️'
-                        embed.description = ''
-                        description = ''
-                    try:
-                        member = ctx.guild.get_member(int(i['memberid']))
-                    except:
-                        member = None
-                    if member is None:
-                        member = self.bot.get_user(int(i['memberid']))
+                        buffer.append({'memberid': x['memberid'], 'amount': x['amount']})
+                    buffer = sorted(buffer, key = lambda x: x['amount'])
+                    buffer = buffer[::-1]
+                    embed = discord.Embed(color=discord.Color.green())
+                    embed.title = f'Топ сервера {ctx.guild.name} по сообщениям.✍️'
+                    description = ''
+                    count = 0
+                    # --------------------------
+                    for i in buffer:
+                        count += 1
+                        if count % 6 == 0:
+                            embed.description = description
+                            embeds.append(embed)
+                            embed = discord.Embed(color=discord.Color.green())
+                            embed.title = f'Топ сервера {ctx.guild.name} по сообщениям.✍️'
+                            embed.description = ''
+                            description = ''
                         try:
-                            memberi = f'{member.name}#{member.discriminator} (Вышел)'
-                        except AttributeError:
-                            memberi = f'<@!{int(i["memberid"])}> (Вышел)'
-                        description += f'**#{count}.** `{memberi}`\n`Время:` **{self.bot.format_time(i["amount"])}**\n'
-                        done = False
-                        for y in buffer2:
-                            if i['memberid'] == y['memberid']:
-                                level = self.bot.GetLevel(y['amount'])
-                                description += f'`Уровень:` **{level[0]}** | `Опыт:` **({y["amount"]*3}/{level[1]*3})**\n\n'
-                                done = True
-                        if not done:
-                            description += f'`Уровень:` **0** | `Опыт:` **(0/30)**\n\n'
+                            member = ctx.guild.get_member(int(i['memberid']))
+                        except:
+                            member = await self.bot.fetch_user(int(i['memberid']))
+                            try:
+                                memberi = f'{member.name}#{member.discriminator} (Вышел)'
+                            except AttributeError:
+                                memberi = f'<@!{int(i["memberid"])}> (Вышел)'
+                            level = self.bot.format_level(i['amount'])
+                            description += f'**#{count}.** `{memberi}`\n`Уровень:` **{level[0]}** | `Опыт:` **({i["amount"]*3}/{level[1]*3})**\n\n'
+                            continue
+                        level = self.bot.format_level(i['amount'])
+                        if member is not None:
+                            description += f'**#{count}.** **{member.nick if member.nick else member.name}**\n`Уровень:` **{level[0]}** | `Опыт:` **({i["amount"]*3}/{level[1]*3})**\n\n'
+                        else:
+                            description += f'**#{count}.** `<@!{int(i["memberid"])}> (Вышел)`\n`Уровень:` **{level[0]}** | `Опыт:` **({i["amount"]*3}/{level[1]*3})**\n\n'
+                    embed.description = description
+                    embeds.append(embed)
+                    if len(embeds) > 1:
+                        await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0], view=Paginator(embeds=embeds, ctx=ctx, bot=self.bot))
                     else:
-                        description += f'**#{count}** **{member.nick if member.nick else member.name}**\n`Время:` **{self.bot.format_time(i["amount"])}**\n'
-                        done = False
-                        for y in buffer2:
-                            if i['memberid'] == y['memberid']:
-                                level = self.bot.GetLevel(y['amount'])
-                                description += f'`Уровень:` **{level[0]}** | `Опыт:` **({y["amount"]*3}/{level[1]*3})**\n\n'
-                                done = True
-                        if not done:
-                            description += f'`Уровень:` **0** | `Опыт:` **(0/30)**\n\n'
-                embed.description = description
-                embeds.append(embed)
-                for i, embed in enumerate(embeds):
-                    try:
-                        embed.set_footer(text=f'{ctx.guild.name} Страница {i+1}/{len(embeds)}', icon_url=f'{ctx.guild.icon.url}')
-                    except Exception:
-                        embed.set_footer(text=f'{ctx.guild.name} Страница {i+1}/{len(embeds)}', icon_url=f'{self.bot.user.avatar.url}')
-                if len(embeds) > 1:
-                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0], view=Paginator(embeds=embeds, ctx=ctx, bot=self.bot))
-                else:
-                    await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0])
-            except Exception:
-                print(traceback.format_exc())
+                        await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0])
+                except Exception:
+                    print(traceback.format_exc())
+                return
+            if category[0] == 'voice':
+                embeds: List[discord.Embed] = []
+                try:
+                    buffer = []
+                    res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, mode='all', category='voice')
+                    for x in res.value:
+                        buffer.append({'memberid': x['memberid'], 'amount': x['amount']})
+                    buffer = sorted(buffer, key = lambda x: x['amount'])
+                    buffer = buffer[::-1]
+                    embed = discord.Embed(color=discord.Color.green())
+                    embed.title = f'Топ сервера {ctx.guild.name} по голосу.🎙️'
+                    description = ''
+                    count = 0
+                    # --------------------------
+                    buffer2 = []
+                    res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, mode='all', category='messages')
+                    if res.status:
+                        for x in res.value:
+                            buffer2.append({'memberid': x['memberid'], 'amount': x['amount']})
+                    # --------------------------
+                    for i in buffer:
+                        if int(i['amount']) == 0:
+                            continue
+                        count += 1
+                        if count % 6 == 0:
+                            embed.description = description
+                            embeds.append(embed)
+                            embed = discord.Embed(color=discord.Color.green())
+                            embed.title = f'Топ сервера {ctx.guild.name} по голосу.🎙️'
+                            embed.description = ''
+                            description = ''
+                        try:
+                            member = ctx.guild.get_member(int(i['memberid']))
+                        except:
+                            member = None
+                        if member is None:
+                            member = await self.bot.fetch_user(int(i['memberid']))
+                            try:
+                                memberi = f'{member.name}#{member.discriminator} (Вышел)'
+                            except AttributeError:
+                                memberi = f'<@!{int(i["memberid"])}> (Вышел)'
+                            description += f'**#{count}.** `{memberi}`\n`Время:` **{self.bot.format_time(i["amount"])}**\n'
+                            done = False
+                            for y in buffer2:
+                                if i['memberid'] == y['memberid']:
+                                    level = self.bot.format_level(y['amount'])
+                                    description += f'`Уровень:` **{level[0]}** | `Опыт:` **({y["amount"]*3}/{level[1]*3})**\n\n'
+                                    done = True
+                            if not done:
+                                description += f'`Уровень:` **0** | `Опыт:` **(0/30)**\n\n'
+                        else:
+                            description += f'**#{count}** **{member.nick if member.nick else member.name}**\n`Время:` **{self.bot.format_time(i["amount"])}**\n'
+                            done = False
+                            for y in buffer2:
+                                if i['memberid'] == y['memberid']:
+                                    level = self.bot.format_level(y['amount'])
+                                    description += f'`Уровень:` **{level[0]}** | `Опыт:` **({y["amount"]*3}/{level[1]*3})**\n\n'
+                                    done = True
+                            if not done:
+                                description += f'`Уровень:` **0** | `Опыт:` **(0/30)**\n\n'
+                    embed.description = description
+                    embeds.append(embed)
+                    for i, embed in enumerate(embeds):
+                        try:
+                            embed.set_footer(text=f'{ctx.guild.name} Страница {i+1}/{len(embeds)}', icon_url=f'{ctx.guild.icon.url}')
+                        except Exception:
+                            embed.set_footer(text=f'{ctx.guild.name} Страница {i+1}/{len(embeds)}', icon_url=f'{self.bot.user.avatar.url}')
+                    if len(embeds) > 1:
+                        await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0], view=Paginator(embeds=embeds, ctx=ctx, bot=self.bot))
+                    else:
+                        await ctx.send('⚠️Показывается статистика в момент вызова команды.', embed=embeds[0])
+                except Exception:
+                    print(traceback.format_exc())
     
     @commands.command(description='Благодаря этой команде вы можете вступить в брак с кем нибудь!\nПример: `s!marry @партнер`')
     async def marry(self, ctx: commands.Context, member: discord.Member = None):
@@ -369,128 +389,130 @@ class cmds(commands.Cog, description='**Основные команды бота
     
     @commands.command(aliases=['user-info'], description='Утилита.\nС помощью этой команды вы можете посмотреть подробную информацию об участнике сервера.')
     async def user(self, ctx: commands.Context, member: discord.Member=None) -> None:
-        async with ctx.channel.typing():
-            if ctx.message.reference:
-                msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
-                member = msg.author
-            else:
-                if member is None:
-                    member = ctx.author
-            if member.avatar:
-                url = member.avatar.url
-            else:
-                url = self.bot.user.avatar.url
-            embed = discord.Embed(color=member.top_role.color)
-            description = f'{member.mention}\n(Заполнить информацию о себе: `s!setinfo`)\n\n'
-            # -------------
-            if not member.bot:
-                res = await self.bot.bd.fetch({'memberid': member.id, 'guildid': ctx.guild.id}, category='bio')
-                if res.status:
-                    description += f'`Био:`\n```{res.value["data"]}```\n'
+        try:
+            async with ctx.channel.typing():
+                if ctx.message.reference:
+                    msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+                    member = msg.author
                 else:
-                    description += f'`Био:`\n ```Не указано.```\n'
-                # -------------
-                res = await self.bot.bd.fetch({'memberid': member.id, 'guildid': ctx.guild.id}, category='age')
-                if res.status:
-                    description += f'>>> `Возраст:` {res.value["data"]}\n'
+                    if member is None:
+                        member = ctx.author
+                if member.avatar:
+                    url = member.avatar.url
                 else:
-                    description += f'>>> `Возраст:` Не указан.\n'
+                    url = self.bot.user.avatar.url
+                embed = discord.Embed(color=member.top_role.color)
+                description = f'{member.mention}\n(Заполнить информацию о себе: `s!setinfo`)\n\n'
                 # -------------
-                res = await self.bot.bd.fetch({'memberid': member.id, 'guildid': ctx.guild.id}, category='gender')
-                if res.status:
-                    description += f'`Пол:` {res.value["data"]}\n'
-                else:
-                    description += f'`Пол:` Не указан.\n'
-                # -------------
-                res = await self.bot.bd.fetch({'memberid': member.id, 'guildid': ctx.guild.id}, category='name')
-                if res.status:
-                    description += f'`Имя:` {res.value["data"]}\n'
-                else:
-                    description += f'`Имя:` Не указано.\n'
-                # -------------
-                description += '\n'
-                # -------------
-                res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='messages')
-                if res.status:
-                    level = self.bot.GetLevel(res.value['amount'])
-                    description += f'`Уровень:` **{level[0]}** `({res.value["amount"]*3}/{level[1]*3})`\n'
-                else:
-                    description += f'`Уровень:` **0** `(Не написано ни одного сообщения)`\n'
+                if not member.bot:
+                    res = await self.bot.bd.fetch({'memberid': member.id, 'guildid': ctx.guild.id}, category='bio')
+                    if res.status:
+                        description += f'`Био:`\n```{res.value["data"]}```\n'
+                    else:
+                        description += f'`Био:`\n ```Не указано.```\n'
+                    # -------------
+                    res = await self.bot.bd.fetch({'memberid': member.id, 'guildid': ctx.guild.id}, category='age')
+                    if res.status:
+                        description += f'>>> `Возраст:` {res.value["data"]}\n'
+                    else:
+                        description += f'>>> `Возраст:` Не указан.\n'
+                    # -------------
+                    res = await self.bot.bd.fetch({'memberid': member.id, 'guildid': ctx.guild.id}, category='gender')
+                    if res.status:
+                        description += f'`Пол:` {res.value["data"]}\n'
+                    else:
+                        description += f'`Пол:` Не указан.\n'
+                    # -------------
+                    res = await self.bot.bd.fetch({'memberid': member.id, 'guildid': ctx.guild.id}, category='name')
+                    if res.status:
+                        description += f'`Имя:` {res.value["data"]}\n\n'
+                    else:
+                        description += f'`Имя:` Не указано.\n\n'
+                    # -------------
+                    res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='messages')
+                    if res.status:
+                        level = self.bot.format_level(res.value['amount'])
+                        description += f'`Уровень:` **{level[0]}** `({res.value["amount"]*3}/{level[1]*3})`\n'
+                    else:
+                        description += f'`Уровень:` **0** `(Не написано ни одного сообщения)`\n'
+                    # ---------------------------------------------
+                    res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='voice')
+                    if res.status:
+                        tim = self.bot.format_time(res.value['amount'])
+                        description += f'`Времени в голосовых каналах:` **{tim}**\n\n'
+                    else:
+                        description += f'`Времени в голосовых каналах:` **0:00**\n\n'
+                    # --------------------------------------------- 
+                    args = await self.bot.get_marry_info(member)
+                    if args is not None:
+                        description += f'`Брак:` В браке с **{self.bot.get_user(args["partner"])}**\n`Дата свадьбы:` <t:{args["date"]}:R>\n\n'
+                    else:
+                        description += f'`Брак:` Не состоит в браке.\n\n'
                 # ---------------------------------------------
-                res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='voice')
-                if res.status:
-                    tim = self.bot.format_time(res.value['amount'])
-                    description += f'`Времени в голосовых каналах:` **{tim}**\n\n'
+                description += f'`Аватар` [[Клик]]({url})\n'
+                embed.title = f'Информация о {member.name}'
+                if member.nick is not None:
+                    description += f'`Пользовательский ник:` **{member.nick}**\n'
+                description += f'`Аккаунт создан:` <t:{int(member.created_at.timestamp())}:R>\n'
+                res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='joined')
+                if not res.status:
+                    description += f'`Присоединился к серверу:` <t:{int(member.joined_at.timestamp())}:R>\n'
                 else:
-                    description += f'`Времени в голосовых каналах:` **0:00**\n\n'
-                # --------------------------------------------- 
-                args = await self.bot.get_marry_info(member)
-                if args is not None:
-                    description += f'`Брак:` В браке с **{self.bot.get_user(args["partner"])}**\n`Дата свадьбы:` <t:{args["date"]}:R>\n\n'
-                else:
-                    description += f'`Брак:` Не состоит в браке.\n\n'
-            # ---------------------------------------------
-            description += f'`Аватар` [[Клик]]({url})\n'
-            embed.title = f'Информация о {member.name}'
-            if member.nick is not None:
-                description += f'`Пользовательский ник:` **{member.nick}**\n'
-            description += f'`Аккаунт создан:` <t:{int(member.created_at.timestamp())}:R>\n'
-            res = await self.bot.bd.fetch({'guildid': member.guild.id, 'memberid': member.id}, category='joined')
-            if not res.status:
-                description += f'`Присоединился к серверу:` <t:{int(member.joined_at.timestamp())}:R>\n'
-            else:
-                description += f'`Впервые присоединился к серверу:` <t:{res.value["time"]}:R>\n'
-            animated = False
-            if member.avatar:
-                if member.avatar.is_animated():
-                    animated = True
-            # for some reson member.banner isnt working here
-            banner = await self.bot.http.request(Route('GET', f'/users/{member.id}'))
-            banner = banner['banner']
-            description += '`Имеет премиум подписку.`<:nitro:1009420900535386122>\n' if member.premium_since or animated or banner else ""
-            if member.activity is not None:
-                if member.activity.type is discord.ActivityType.playing:
-                    description += f'`Играет в` **{member.activity.name}**'
-                elif member.activity.type is discord.ActivityType.streaming:
-                    description += f'`Стримит` **{member.activity.name}**'
-                elif member.activity.type is discord.ActivityType.listening:
-                    description += f'`Слушает` **{member.activity.name}**'
-                elif member.activity.type is discord.ActivityType.watching:
-                    description += f'`Смотрит` **{member.activity.name}**'
-                elif member.activity.type is discord.ActivityType.competing:
-                    description += f'`Соревнуется` **{member.activity.name}**'
-                else:
-                    description += f'`Пользовательский статус:` **{member.activity.name}**'
+                    description += f'`Впервые присоединился к серверу:` <t:{res.value["time"]}:R>\n'
+                animated = False
+                if member.avatar:
+                    if member.avatar.is_animated():
+                        animated = True
+                # we need to fetch banner
+                banner = await self.bot.http.request(Route('GET', f'/users/{member.id}'))
+                banner = banner['banner']
+                description += '`Имеет премиум подписку.`<:nitro:1009420900535386122>\n' if member.premium_since or animated or banner else ""
+                if member.activity is not None:
+                    if member.activity.type is discord.ActivityType.playing:
+                        description += f'`Играет в` **{member.activity.name}**'
+                    elif member.activity.type is discord.ActivityType.streaming:
+                        description += f'`Стримит` **{member.activity.name}**'
+                    elif member.activity.type is discord.ActivityType.listening:
+                        description += f'`Слушает` **{member.activity.name}**'
+                    elif member.activity.type is discord.ActivityType.watching:
+                        description += f'`Смотрит` **{member.activity.name}**'
+                    elif member.activity.type is discord.ActivityType.competing:
+                        description += f'`Соревнуется` **{member.activity.name}**'
+                    else:
+                        description += f'`Пользовательский статус:` **{member.activity.name if member.activity.name != None else "Отсутствует."}**'
+                    description += '\n'
+                if member.status is discord.Status.offline:
+                    description += f'`Статус:` <:offline:1004822660481548368> Не в сети.'
+                elif member.status is discord.Status.online:
+                    if member.is_on_mobile():
+                        description += f'`Статус:` <:online:1004825002203426856> В сети.'
+                    else:
+                        description += f'`Статус:` <:online:1004822664269008976> В сети.'
+                elif member.status is discord.Status.dnd or member.status is discord.Status.do_not_disturb:
+                    description += f'`Статус:` <:dnd:1004822667817406496> Не беспокоить.'
+                elif member.status is discord.Status.idle:
+                    description += f'`Статус:` <:idle:1004822662629040208> Не активен.'
                 description += '\n'
-            if member.status is discord.Status.offline:
-                description += f'`Статус:` <:offline:1004822660481548368> Не в сети.'
-            elif member.status is discord.Status.online:
-                if member.is_on_mobile():
-                    description += f'`Статус:` <:online:1004825002203426856> В сети.'
-                else:
-                    description += f'`Статус:` <:online:1004822664269008976> В сети.'
-            elif member.status is discord.Status.dnd or member.status is discord.Status.do_not_disturb:
-                description += f'`Статус:` <:dnd:1004822667817406496> Не беспокоить.'
-            elif member.status is discord.Status.idle:
-                description += f'`Статус:` <:idle:1004822662629040208> Не активен.'
-            description += '\n'
-            if member.is_timed_out():
-                description+=f'`Находится в тайм-ауте до:` <t:{member.timed_out_until.timestamp()}:R>\n'
-            description += f'`Самая высокая роль:` <@&{member.top_role.id}>'
-            embed.description = description
-            embed.set_thumbnail(url=url)
-            try:
-                embed.set_footer(text=f'{member.guild.name}', icon_url=f'{member.guild.icon.url}')
-            except Exception:
-                embed.set_footer(text=f'{member.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
-            await ctx.channel.send(embed=embed)
+                if member.is_timed_out():
+                    description+=f'`Находится в тайм-ауте до:` <t:{member.timed_out_until.timestamp()}:R>\n'
+                description += f'`Самая высокая роль:` <@&{member.top_role.id}>'
+                embed.description = description
+                embed.set_thumbnail(url=url)
+                try:
+                    embed.set_footer(text=f'{member.guild.name}', icon_url=f'{member.guild.icon.url}')
+                except Exception:
+                    embed.set_footer(text=f'{member.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
+                await ctx.channel.send(embed=embed)
+        except Exception:
+            print(traceback.format_exc())
 
     @commands.command(description="Утилита.\nРасскажите о себе. Эта информация появится на вашем профиле на сервере.")
     async def setinfo(self, ctx: commands.Context) -> None:
         async with ctx.channel.typing():
             embed = ViolaEmbed(ctx=ctx)
             embed.description = '>>> Выберите действие,\nКоторое вам нужно:'
-            await ctx.channel.send(embed=embed, view=SetInfo(ctx=ctx))
+            view = SetInfo(ctx=ctx)
+            view.message = await ctx.channel.send(embed=embed, view=view)
     
     @commands.command(description="Отключает команду на этом сервере. Пример: `s!disable marry`\n(с отключенными командами нельзя взаимодействовать.)")
     @has_permissions(administrator=True)
@@ -498,8 +520,12 @@ class cmds(commands.Cog, description='**Основные команды бота
         if command == 'disable' or command == 'enable':
             return await ctx.message.reply('Вы не можете отключать эти команды!')
         if command == 'levelling':
-            await self.bot.bd.add({'guildid': ctx.guild.id}, category='levelling')
-            return await ctx.send('disabled')
+            res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, category='levelling')
+            if not res.status:
+                await self.bot.bd.add({'guildid': ctx.guild.id}, category='levelling')
+                return await ctx.send('`Оповещения о повышении уровней отключены.`')
+            else:
+                return await ctx.send('`Эта функция уже отключена.`')
         for x in self.bot.commands:
             if str(x.name) == str(command):
                 res = await self.bot.bd.fetch({'guildid': ctx.guild.id, 'commandname': str(x.name)}, category='disabledcmds')
@@ -513,8 +539,12 @@ class cmds(commands.Cog, description='**Основные команды бота
     @has_permissions(administrator=True)
     async def enable(self, ctx: commands.Context, command) -> None:
         if command == 'levelling':
-            await self.bot.bd.remove({'guildid': ctx.guild.id}, category='levelling')
-            return await ctx.send('disabled')
+            res = await self.bot.bd.fetch({'guildid': ctx.guild.id}, category='levelling')
+            if res.status:
+                await self.bot.bd.remove({'guildid': ctx.guild.id}, category='levelling')
+                return await ctx.send('`Оповещения о повышении уровней включены.`')
+            else:
+                return await ctx.send('`Эта функция не отключена.`')
         for x in self.bot.commands:
             if str(x.name) == str(command):
                 res = await self.bot.bd.fetch({'guildid': ctx.guild.id, 'commandname': str(x.name)}, category='disabledcmds')
@@ -526,14 +556,15 @@ class cmds(commands.Cog, description='**Основные команды бота
 
     @app_commands.command(description="Задержка бота в миллисекундах.")
     async def ping(self, interaction: discord.Interaction) -> None:
-        ping1 = f"{str(round(self.bot.latency * 1000))} ms"
-        embed = discord.Embed(title = "**Pong!**", description = "`" + ping1 + "`", color = 0xafdafc)
-        await interaction.response.send_message(embed = embed)
+        await interaction.response.defer(thinking= True)
+        ping1 = f"{str(round(self.bot.latency * 1000))}ms"
+        embed = discord.Embed(title = "**Pong!**", color = 0xafdafc)
+        tim = time.time()
+        await self.bot.bd.fetch({}, category='system')
+        secs = round((time.time() - tim)*1000)
+        embed.description = f'`Обработка команд:` **{ping1}**\n`База данных:` **{secs}ms**\n`кол-во операций с бд:` **{self.bot.bd.operations}**\n`Время работы:` **{self.bot.format_time(round(time.time()-self.uptime))}**'
+        await interaction.followup.send(embed = embed)
 
-    @commands.command()
-    async def history(self, ctx: commands.Context):
-        async for x in ctx.channel.history(limit=150):
-            print(x)
     @commands.command(description = 'Утилита.\nУзнайте аватар любого пользователя.')
     async def avatar(self, ctx: commands.Context, user: discord.User = None) -> None:
         if user is None:
@@ -616,50 +647,47 @@ class cmds(commands.Cog, description='**Основные команды бота
                 await ctx.send("`Что то пошло не так...`")
 
     @commands.command(description="Заглушает всех людей в голосовом канале. Если канал не указан то заглушает всех в голосовом канале автора команды.")
-    @has_permissions(administrator=True)
-    async def vcm(self, ctx: commands.Context, *channel) -> None:
+    @has_permissions(moderate_members=True)
+    async def vcm(self, ctx: commands.Context, channel: discord.VoiceChannel = None) -> None:
         if not channel:
             try:
                 channel = ctx.author.voice.channel
             except AttributeError:
                 embed = ViolaEmbed(ctx=ctx, format='error')
                 embed.description = '**Укажите канал для выполнения этого действия.**'
-                await ctx.channel.send(embed=embed)
-                return
+                return await ctx.channel.send(embed=embed)
         ids = [self.bot.owner_id]
         done = False
         if not channel:
             await ctx.send("`s!vcm <channel_id | mention> заглушает всех в голосовом канале.`")
             return
-        try:
-            vc = self.bot.get_channel(int(str(channel[0]).replace("<#", '').replace(">", '')))
-            if not vc: await ctx.send("`Канал не найден.`")
-            if vc.guild.name != ctx.guild.name:
-                await ctx.send("`Канал не найден.`")
-                return
-            for member in vc.members:
-                if not int(member.id) in ids:
+        with suppress(Exception):
+            if not channel: 
+                return await ctx.send("`Канал не найден.`")
+            if channel.guild.name != ctx.guild.name:
+                return await ctx.send("`Канал не найден.`")
+            for member in channel.members:
+                if not member.id in ids:
                     await member.edit(mute=True, reason="voice_channel_mute")
                     done = True
             if done:
-                await ctx.send(f'`Все участники в канале {vc.name} заглушены.`')
+                await ctx.send(f'`Все участники в канале {channel.name} заглушены.`')
             else:
-                await ctx.send(f'`В канале {vc.name} нет участников, которых можно заглушить.`')
-        except Exception:
-            return
+                await ctx.send(f'`В канале {channel.name} нет участников, которых можно заглушить.`')
 
     @commands.command(aliases = ['r', ], description ='Команда.\nПсевдонимы: `s!r <текст>`\nОтвечает от имени бота на сообщение другого пользователя.\n(Вам необходимо чтобы в сообщении с командой был ответ на то сообщение на которое вы хотите чтобы бот ответил.)')
     async def reply(self, ctx: commands.Context, *content) -> None:
-        async def d1(ctx: commands.Context):
-            await ctx.message.delete()
-        async def r2(ctx: commands.Context, content, message: discord.Message):
-            await message.reply(content=' '.join(content))
-        if not ctx.message.reference:
-            return
-        ref = ctx.message.reference
-        message = self.bot.get_channel(ref.channel_id).get_partial_message(ref.message_id)
-        self.bot.loop.create_task(d1(ctx))
-        self.bot.loop.create_task(r2(ctx, content, message))
+        with suppress(Exception):
+            async def d1(ctx: commands.Context):
+                await ctx.message.delete()
+            async def r2(ctx: commands.Context, content, message: discord.Message):
+                await message.reply(content=' '.join(content))
+            if not ctx.message.reference:
+                return
+            ref = ctx.message.reference
+            message = self.bot.get_channel(ref.channel_id).get_partial_message(ref.message_id)
+            self.bot.loop.create_task(d1(ctx))
+            self.bot.loop.create_task(r2(ctx, content, message))
 
     @commands.command(description="Эту команду может использовать только мой создатель.")
     async def invite(self, ctx: commands.Context, id) -> None:
@@ -698,10 +726,13 @@ class cmds(commands.Cog, description='**Основные команды бота
     @commands.command()
     @commands.is_owner()
     async def getav(self, ctx: commands.Context, member: discord.Member = None, format='welcome'):
-        if member is None:
-            member = ctx.author
-        dfile = await self.bot.get_welcome_image(member=member, format=format)
-        await ctx.channel.send(file=dfile)
+        try:
+            if member is None:
+                member = ctx.author
+            dfile = await self.bot.get_welcome_image(member=member, format=format)
+            await ctx.channel.send(file=dfile)
+        except Exception:
+            print(traceback.format_exc())
     
     @commands.command()
     @has_permissions(ban_members=True)

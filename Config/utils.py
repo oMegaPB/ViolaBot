@@ -7,6 +7,7 @@ from urllib.parse import quote
 from hashlib import sha1
 from hmac import new as hmac_new
 
+# Dataclasses ------------------------------------------------------------------------------
 @dataclass
 class YTVideo:
     identifier : str
@@ -16,59 +17,57 @@ class YTVideo:
     author_url: str
     duration: str
     view_count: str
-
 @dataclass
 class Song:
     title: str
     author: str
     thumbnail_url: str = field(default=None)
     shazam_url: str = field(default=None)
-
-class YT:
-    async def getYT(self, query: str) -> Union[YTVideo, bool]:
-        """
-        |coro|    
-        
-        Returns first video search result on youtube.
-        
-        """
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f'https://www.youtube.com/results?search_query={quote(query)}') as response:
-                data = await response.text()
-        a = BeautifulSoup(data, 'lxml')
-        data = json.loads(str(a.findAll('script')[-6].text).replace('var ytInitialData = ', '').replace(';', ''))['contents']["twoColumnSearchResultsRenderer"]["primaryContents"]["sectionListRenderer"]["contents"][0]["itemSectionRenderer"]["contents"][0]
+# Functions -----------------------------------------------------------------------------------
+async def yt_search(query: str) -> Union[YTVideo, bool]:
+    """
+    |coro|    
+    
+    Returns first video search result on youtube.
+    
+    """
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f'https://www.youtube.com/results?search_query={quote(query)}') as response:
+            data = await response.text()
+    a = BeautifulSoup(data, 'lxml')
+    data = json.loads(str(a.findAll('script')[-6].text).replace('var ytInitialData = ', '').replace(';', ''))['contents']["twoColumnSearchResultsRenderer"]["primaryContents"]["sectionListRenderer"]["contents"][0]["itemSectionRenderer"]["contents"][0]
+    try:
         try:
-            try:
-                data['playlistRenderer']
-                return False
-            except KeyError:
-                ident = data["videoRenderer"]["videoId"]
+            data['playlistRenderer']
+            return False
         except KeyError:
-            query = data['showingResultsForRenderer']['correctedQuery']['runs'][0]['text']
-            data = await self.getYT(query)
+            ident = data["videoRenderer"]["videoId"]
+    except KeyError:
+        query = data['showingResultsForRenderer']['correctedQuery']['runs'][0]['text']
+        data = await yt_search(query)
+    try:
+        thumb = data["videoRenderer"]["thumbnail"]["thumbnails"][0]["url"]
+        title = data["videoRenderer"]["title"]["runs"][0]["text"]
+        author = data["videoRenderer"]["longBylineText"]["runs"][0]["text"]
+        url = "https://www.youtube.com" + data["videoRenderer"]["longBylineText"]["runs"][0]["navigationEndpoint"]["commandMetadata"]["webCommandMetadata"]["url"]
+        duration = data["videoRenderer"]["lengthText"]["simpleText"]
+        views = str(repr(data["videoRenderer"]["viewCountText"]["simpleText"]).replace(' просмотров', '').replace('xa0', '').replace('\\', '').replace("'", '').replace(' просмотра', '').replace(' просмотр', '').replace(' views', ''))
         try:
-            thumb = data["videoRenderer"]["thumbnail"]["thumbnails"][0]["url"]
-            title = data["videoRenderer"]["title"]["runs"][0]["text"]
-            author = data["videoRenderer"]["longBylineText"]["runs"][0]["text"]
-            url = "https://www.youtube.com" + data["videoRenderer"]["longBylineText"]["runs"][0]["navigationEndpoint"]["commandMetadata"]["webCommandMetadata"]["url"]
-            duration = data["videoRenderer"]["lengthText"]["simpleText"]
-            views = str(repr(data["videoRenderer"]["viewCountText"]["simpleText"]).replace(' просмотров', '').replace('xa0', '').replace('\\', '').replace("'", '').replace(' просмотра', '').replace(' просмотр', '').replace(' views', ''))
-            try:
-                views = ('{:,}'.format(int(views)))
-            except Exception:
-                views = views
-            return YTVideo(ident, thumb, title, author, url, duration, views)
-        except TypeError:
-            return data
-
+            views = ('{:,}'.format(int(views)))
+        except Exception:
+            views = views
+        return YTVideo(ident, thumb, title, author, url, duration, views)
+    except TypeError:
+        return data
+# Classes -----------------------------------------------------------------------------------
 class HerokuRecognizer:
     async def get_shazam_data(self, music_bytes: bytes) -> str:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
             async with session.post("https://nameless-sierra-10297.herokuapp.com/api/v1", data={"b_data": music_bytes}) as response:
                 if response.status == 200:
                     return await response.text()
                 else:
-                    raise Exception(f"API status code {response.status}\nПопробуйте еще раз.")    
+                    raise aiohttp.ClientConnectionError(f"API status code {response.status}\nПопробуйте еще раз.")    
     async def recognize_API(self, music_bytes: bytes) -> Song:
         shazam_data = await self.get_shazam_data(music_bytes)
         try:
@@ -80,7 +79,6 @@ class HerokuRecognizer:
             return song
         except KeyError:
             return False
-
 class ACRcloud:
     def __init__(self):
         data = os.environ.get('ARCLOUD').split(':')
@@ -118,7 +116,6 @@ class ACRcloud:
             shazam = 'https://www.shazam.com/ru'
             return Song(title, author, thumbnail, shazam)
         return False
-# ----------------------------------------------------------------------------------
 class Paginator(discord.ui.View):
     def __init__(self, *, timeout=60.0, embeds: List[discord.Embed], ctx: commands.Context, bot: commands.Bot):
         super().__init__(timeout=timeout)
@@ -134,7 +131,7 @@ class Paginator(discord.ui.View):
             except Exception:
                 embed.set_footer(text=f'{ctx.guild.name} Страница {i+1}/{len(embeds)}', icon_url=f'{self.bot.user.avatar.url}')
     @discord.ui.button(label="⏮️", style=discord.ButtonStyle.gray, disabled=True)
-    async def prevfive(self, interaction:discord.Interaction, button: discord.ui.Button):
+    async def prevall(self, interaction:discord.Interaction, button: discord.ui.Button):
         self.count = 0
         button.disabled = True
         x: discord.ui.Button
@@ -180,7 +177,7 @@ class Paginator(discord.ui.View):
         await interaction.message.edit(embed=self.embeds[self.count], view=self)
         await interaction.response.defer()
     @discord.ui.button(label="⏭️", style=discord.ButtonStyle.gray)
-    async def nextfive(self, interaction:discord.Interaction, button: discord.ui.Button):
+    async def nextall(self, interaction:discord.Interaction, button: discord.ui.Button):
         self.count = len(self.embeds) - 1
         button.disabled = True
         x: discord.ui.Button
@@ -201,3 +198,4 @@ class Paginator(discord.ui.View):
     @discord.ui.button(label="❌", style=discord.ButtonStyle.red)
     async def close(self, interaction:discord.Interaction, button: discord.ui.Button):
         await interaction.message.delete()
+            

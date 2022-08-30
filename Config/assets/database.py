@@ -36,12 +36,9 @@ class MongoDB:
     
     @property
     def categories(self) -> List[str]:
-        end = []
         async def _wrapper():
-            for i in await self.db.list_collection_names():
-                end.append(i)
-        self.loop.run_until_complete(_wrapper())
-        return end
+            return [i for i in await self.db.list_collection_names()]
+        return self.loop.run_until_complete(_wrapper())
     
     @property
     def operations(self) -> int:
@@ -49,12 +46,9 @@ class MongoDB:
     
     @property
     def databases(self) -> List[str]:
-        end = []
         async def _wrapper():
-            for i in await self.client.list_database_names():
-                end.append(i)
-        self.loop.run_until_complete(_wrapper())
-        return end
+            return [i for i in await self.client.list_database_names()]
+        return self.loop.run_until_complete(_wrapper())
 
     async def add(self, data: Dict[Any, Any], category: str) -> None:
         """
@@ -67,8 +61,7 @@ class MongoDB:
         try:
             res = await self.fetch(data, category=category)
         except BSONError:
-            print('BSON ERROR:', data)
-            return
+            return print('BSON ERROR:', data)
         if res.status:
             return
         await self.db[category].insert_one(data)

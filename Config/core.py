@@ -1,18 +1,20 @@
-import traceback, os, io
+import traceback, os, io, lavalink
 import discord, asyncio, aiohttp
-import datetime
+import datetime, contextlib
 from typing import Optional, Dict, Any, List, Union, AsyncIterator
 from discord.ext import commands
 from Config.utils import Paginator
 from Config.assets.database import MongoDB
 from Config.components import TicketButtons, TicketClose, RoomActions, ViolaEmbed
 from PIL import Image, ImageFont, ImageDraw
+cwd = os.path.join(os.getcwd(), 'Config')
 
 class Viola(commands.Bot):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.bd = MongoDB() # database connection
         self.session: aiohttp.ClientSession = None # filled in setup_hook
+        self.lavalink: lavalink.Client = None
         print('-------------------------------------------')
         print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] [Viola/INFO]: Connected to database successfully.')
     
@@ -26,7 +28,7 @@ class Viola(commands.Bot):
         for i in persistents:
             self.add_view(i)
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
-        for filename in os.listdir(os.path.join(os.getcwd().replace('Config', ''), 'Cogs')):
+        for filename in os.listdir(os.path.join(cwd.replace('Config', ''), 'Cogs')):
             if filename.endswith(".py"):
                 await self.load_extension(f"Cogs.{filename[:-3]}")
     
@@ -71,14 +73,14 @@ class Viola(commands.Bot):
             avatar_url = 'https://raw.githubusercontent.com/AdvertiseYourServer/Default-Discord-Avatars/master/4.png'
         else:
             avatar_url = member.avatar.url
-        im = Image.open(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets', 'image.png')).convert('RGBA')
-        mainfont = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets', 'welcome_font.ttf'), size=25)
+        im = Image.open(os.path.join(cwd, 'assets', 'image.png')).convert('RGBA')
+        mainfont = ImageFont.truetype(os.path.join(cwd, 'assets', 'welcome_font.ttf'), size=25)
         async with self.session.get(avatar_url) as response:
             avatar = Image.open(io.BytesIO(await response.content.read())).resize((170, 170), 0).convert('RGBA')
             mask_im = Image.new("L", avatar.size, 0)
             draw = ImageDraw.Draw(mask_im)
-            ellipse = Image.open(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets', 'rgb.png')).convert('RGBA').resize((210, 210))
-            mask = Image.open(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets', 'rgbmask.png')).convert('L').resize((210, 210))
+            ellipse = Image.open(os.path.join(cwd, 'assets', 'rgb.png')).convert('RGBA').resize((210, 210))
+            mask = Image.open(os.path.join(cwd, 'assets', 'rgbmask.png')).convert('L').resize((210, 210))
             text = ImageDraw.Draw(im)
             if format == 'welcome':
                 text.text((220, 70), text='Добро пожаловать!', font=mainfont, fill=(255, 255, 255, 255))
@@ -93,7 +95,7 @@ class Viola(commands.Bot):
             self.imgforfont= im.crop((210, 0, 750, 250))
             def set_size(fontsize: int) -> Image.Image:
                 tmp= self.imgforfont.copy()
-                font = ImageFont.truetype(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets', 'welcome_font.ttf'), size=fontsize)
+                font = ImageFont.truetype(os.path.join(cwd, 'assets', 'welcome_font.ttf'), size=fontsize)
                 imdraw = ImageDraw.Draw(tmp)
                 imdraw.text(text=f'{member.display_name}#{member.discriminator}', xy=(8, 115), font=font)
                 pixels = tmp.load()
@@ -110,7 +112,7 @@ class Viola(commands.Bot):
                     return
                 else:
                     set_size(fontsize=fontsize-1)
-            set_size(50)
+            self.loop.run_in_executor(None, set_size, 50)
             im.paste(self.imgforfont, (210, 0))
             image_bytes = io.BytesIO()
             im.save(image_bytes, format='PNG')
@@ -127,53 +129,20 @@ class Viola(commands.Bot):
                         if not m.bot:
                             yield m
     
-    def GetLevel(self, amount: int) -> List[int]:
-        amount += 1
-        level = 0
-        additional = 1
-        if amount < 10:
-            return [0, 10]
-        else:
-            amount -= 10
-            level += 1
-            if amount - 40 > 0:
-                amount -= 40
-                level += 1
-                if amount - 50 > 0:
-                    amount -= 50
-                    level += 1
-                    for i in range(2):
-                        if amount - 75 > 0:
-                            amount -= 75
-                            level += 1
-                        else: 
-                            break
-                    if amount - 100 > 0:
-                        amount -= 100
-                        level += 1
-                        for i in range(3):
-                            if amount - 150 > 0:
-                                amount -= 150
-                                level += 1
-                            else: 
-                                break
-                        if amount - 200 > 0:
-                            amount -= 200
-                            level += 1
-                        while True:
-                            if amount - 200 > 0:
-                                amount -= 200
-                                level += 1
-                                additional += 1
-                            else:
-                                break
-        levels = {'0': 10, '1': 50 , '2': 100, '3': 175, '4': 250, '5': 350, '6': 500, '7': 650, '8': 800, '9': 1000, '10': 1200}
-        if str(level) in levels.keys():
-            next = levels[f'{level}']
-        else:
-            additional = 200 * additional
-            next = 1000 + additional
-        return [level, next]
+    def format_level(self, amount: int) -> List[int]:
+        levels = {0: 10, 1: 50, 2: 100, 3: 175, 4: 250, 5: 350, 6: 500, 7: 650, 8: 800, 9: 1000, 10: 1200}
+        for level, need in levels.items():
+            if amount >= need:
+                continue
+            return [level, need]
+        amount -= 1000
+        actual_level = 10
+        while True:
+            if amount - 200 >= 0:
+                amount -= 200
+                actual_level += 1
+            else:
+                return [actual_level, 1200 + (200 * (actual_level-10))]
 
 class ViolaHelp(commands.HelpCommand):
     def __init__(self) -> None:
@@ -183,11 +152,9 @@ class ViolaHelp(commands.HelpCommand):
         async with self.context.channel.typing():
             embeds = []
             for i, j in enumerate(mapping.keys()):
-                try:
+                with contextlib.suppress(AttributeError):
                     if j.__cog_name__ == 'events':
                         continue
-                except AttributeError:
-                    pass
                 j: commands.Cog
                 x: commands.Command
                 embed = ViolaEmbed(ctx=self.context)

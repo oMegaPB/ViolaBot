@@ -1,6 +1,5 @@
 from contextlib import suppress
-import json
-import traceback, datetime
+import traceback, datetime, json
 import discord, asyncio, random
 from discord.ext import commands
 from typing import List
@@ -224,111 +223,111 @@ class Reactions(discord.ui.View):
             return False
         return True
 # Logs -----------------------------------------------------------------------------------------------------------
-class LogsCallback(discord.ui.Select):
+class Logs(discord.ui.View):
     def __init__(self):
-        options=[
-            discord.SelectOption(label="Добавить систему логов.",emoji="🗒️",description="Добавить систему логирования событий сервера."),
-            discord.SelectOption(label="Удалить систему логов.",emoji="📎",description="Удалить систему логирования событий сервера."),
-            discord.SelectOption(label="Состояние системы.",emoji="📡",description="Просмотр состояния системы.")
-            ]
-        super().__init__(placeholder="Выберите опцию.", max_values=1, min_values=1, options=options)
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        if self.values[0] == 'Добавить систему логов.':
-            res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='logs')
-            if not res.status:
-                def check(m: discord.Message):
-                    return m.author.id == interaction.user.id and m.channel.id == interaction.channel_id
-                if len(interaction.guild.text_channels) > 25:
-                    await interaction.followup.send('`Отправьте в чат id текстового канала:`', ephemeral=True)
-                    try:    
-                        msg = await interaction.client.wait_for('message', timeout=60.0, check=check)
-                    except asyncio.TimeoutError:
-                        return
-                    await msg.delete()
-                    try:
-                        channel = interaction.client.get_channel(int(msg.content))
-                    except ValueError:
-                        return await interaction.followup.send(f'`Неверный формат. Убедитесь что ваше сообщение не содержит букв.`', ephemeral=True)
-                    if channel is None or channel not in interaction.guild.text_channels:
-                        return await interaction.followup.send('`Канал не найден среди текстовых каналов этого сервера.`', ephemeral=True)
-                    await interaction.client.bd.add({'guildid': interaction.guild.id, 'channel_id': int(msg.content), 'date': datetime.datetime.now().timestamp(), 'memberid': interaction.user.id}, category='logs')
+        class LogsCallback(discord.ui.Select):
+            def __init__(self):
+                options=[
+                    discord.SelectOption(label="Добавить систему логов.",emoji="🗒️",description="Добавить систему логирования событий сервера."),
+                    discord.SelectOption(label="Удалить систему логов.",emoji="📎",description="Удалить систему логирования событий сервера."),
+                    discord.SelectOption(label="Состояние системы.",emoji="📡",description="Просмотр состояния системы.")
+                    ]
+                super().__init__(placeholder="Выберите опцию.", max_values=1, min_values=1, options=options)
+            async def callback(self, interaction: discord.Interaction):
+                await interaction.response.defer()
+                if self.values[0] == 'Добавить систему логов.':
+                    res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='logs')
+                    if not res.status:
+                        def check(m: discord.Message):
+                            return m.author.id == interaction.user.id and m.channel.id == interaction.channel_id
+                        if len(interaction.guild.text_channels) > 25:
+                            await interaction.followup.send('`Отправьте в чат id текстового канала:`', ephemeral=True)
+                            try:    
+                                msg = await interaction.client.wait_for('message', timeout=60.0, check=check)
+                            except asyncio.TimeoutError:
+                                return
+                            await msg.delete()
+                            try:
+                                channel = interaction.client.get_channel(int(msg.content))
+                            except ValueError:
+                                return await interaction.followup.send(f'`Неверный формат. Убедитесь что ваше сообщение не содержит букв.`', ephemeral=True)
+                            if channel is None or channel not in interaction.guild.text_channels:
+                                return await interaction.followup.send('`Канал не найден среди текстовых каналов этого сервера.`', ephemeral=True)
+                            await interaction.client.bd.add({'guildid': interaction.guild.id, 'channel_id': int(msg.content), 'date': datetime.datetime.now().timestamp(), 'memberid': interaction.user.id}, category='logs')
+                            embed = discord.Embed(color=discord.Color.green())
+                            embed.title = 'Успешно.'
+                            embed.description = f'Система логирования добавлена. Канал: <#{channel.id}>'
+                            await interaction.followup.send(embed=embed, ephemeral=True)
+                        else:
+                            embed = discord.Embed(color=discord.Color.green())
+                            embed.title = 'Логирование.'
+                            embed.description = 'Выберите канал для логирования:'
+                            await interaction.followup.send(embed=embed, view=LogsHelper(interaction=interaction), ephemeral=True)
+                    else:
+                        embed = discord.Embed(color=discord.Color.red())
+                        embed.title = 'Ошибка.'
+                        embed.description = f'Система логов уже активна.\nКанал: {interaction.client.get_channel(res.value["channel_id"]).mention}'
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                elif self.values[0] == 'Удалить систему логов.':
+                    res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='logs')
+                    if res.status:
+                        embed = discord.Embed(color=discord.Color.red())
+                        embed.title = 'Внимание!'
+                        embed.description = 'Система Логирования будет удалена.\nПродолжить?'
+                        await interaction.followup.send(embed=embed, view=ConfirmRemove())
+                    else:
+                        embed = discord.Embed(color=discord.Color.green())
+                        embed.title = 'Логирование.'
+                        embed.description = '`Система Логирования не найдена.`'
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                elif self.values[0] == 'Состояние системы.':
+                    res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='logs')
+                    if res.status:
+                        embed = discord.Embed(color=discord.Color.green())
+                        embed.title='Логирование.'
+                        description = f'`Канал:` {interaction.client.get_channel(int(res.value["channel_id"])).mention}\n'
+                        try:
+                            user = interaction.client.get_user(int(res.value["memberid"]))
+                            description += f'`Добавил систему:` {user.name} ({user.mention})\n'
+                        except BaseException:
+                            description += f'`Добавил систему:` Unknown\n'
+                        try:
+                            description += f'`Дата:` <t:{int(res.value["date"])}:R>\n'
+                        except BaseException:
+                            description += f'`Дата:` Unknown'
+                        embed.description = description
+                        try:
+                            embed.set_footer(text=f'{interaction.guild.name}', icon_url=f'{interaction.guild.icon.url}')
+                        except Exception:
+                            embed.set_footer(text=f'{interaction.guild.name}', icon_url=f'{interaction.client.user.avatar.url}')
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                    else:
+                        embed = discord.Embed(color=discord.Color.green())
+                        embed.title='Логирование.'
+                        embed.description = f'`Система логов сервера не найдена.`'
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+        super().__init__(timeout=120.0)
+        self.add_item(LogsCallback())
+class LogsHelper(discord.ui.View):
+    def __init__(self, *, interaction: discord.Interaction):
+        class LogsChannels(discord.ui.Select):
+            def __init__(self, interaction: discord.Interaction):
+                self.interaction = interaction
+                options=[discord.SelectOption(label=f"{x.id}",emoji="✉️",description=f"{x}") for x in self.interaction.guild.channels if x.type is discord.ChannelType.text]
+                super().__init__(placeholder="Выберите Канал.", max_values=1, min_values=1, options=options)
+            async def callback(self, interaction: discord.Interaction):
+                await interaction.response.defer()
+                res = await interaction.client.bd.fetch({'guildid': self.interaction.guild.id}, category='logs')
+                channel = interaction.client.get_channel(int(self.values[0]))
+                if not res.status:
+                    await interaction.client.bd.add({'guildid': interaction.guild.id, 'channel_id': int(self.values[0]), 'date': datetime.datetime.now().timestamp(), 'memberid': interaction.user.id}, category='logs')
                     embed = discord.Embed(color=discord.Color.green())
                     embed.title = 'Успешно.'
                     embed.description = f'Система логирования добавлена. Канал: <#{channel.id}>'
                     await interaction.followup.send(embed=embed, ephemeral=True)
                 else:
-                    embed = discord.Embed(color=discord.Color.green())
-                    embed.title = 'Логирование.'
-                    embed.description = 'Выберите канал для логирования:'
-                    await interaction.followup.send(embed=embed, view=LogsHelper(interaction=interaction), ephemeral=True)
-            else:
-                embed = discord.Embed(color=discord.Color.red())
-                embed.title = 'Ошибка.'
-                embed.description = f'Система логов уже активна.\nКанал: {interaction.client.get_channel(res.value["channel_id"]).mention}'
-                await interaction.followup.send(embed=embed, ephemeral=True)
-        elif self.values[0] == 'Удалить систему логов.':
-            res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='logs')
-            if res.status:
-                embed = discord.Embed(color=discord.Color.red())
-                embed.title = 'Внимание!'
-                embed.description = 'Система Логирования будет удалена.\nПродолжить?'
-                await interaction.followup.send(embed=embed, view=ConfirmRemove())
-            else:
-                embed = discord.Embed(color=discord.Color.green())
-                embed.title = 'Логирование.'
-                embed.description = '`Система Логирования не найдена.`'
-                await interaction.followup.send(embed=embed, ephemeral=True)
-        elif self.values[0] == 'Состояние системы.':
-            res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='logs')
-            if res.status:
-                embed = discord.Embed(color=discord.Color.green())
-                embed.title='Логирование.'
-                description = f'`Канал:` {interaction.client.get_channel(int(res.value["channel_id"])).mention}\n'
-                try:
-                    user = interaction.client.get_user(int(res.value["memberid"]))
-                    description += f'`Добавил систему:` {user.name} ({user.mention})\n'
-                except BaseException:
-                    description += f'`Добавил систему:` Unknown\n'
-                try:
-                    description += f'`Дата:` <t:{int(res.value["date"])}:R>\n'
-                except BaseException:
-                    description += f'`Дата:` Unknown'
-                embed.description = description
-                try:
-                    embed.set_footer(text=f'{interaction.guild.name}', icon_url=f'{interaction.guild.icon.url}')
-                except Exception:
-                    embed.set_footer(text=f'{interaction.guild.name}', icon_url=f'{interaction.client.user.avatar.url}')
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            else:
-                embed = discord.Embed(color=discord.Color.green())
-                embed.title='Логирование.'
-                embed.description = f'`Система логов сервера не найдена.`'
-                await interaction.followup.send(embed=embed, ephemeral=True)
-class LogsChannels(discord.ui.Select):
-    def __init__(self, interaction: discord.Interaction):
-        self.interaction = interaction
-        options=[discord.SelectOption(label=f"{x.id}",emoji="✉️",description=f"{x}") for x in self.interaction.guild.channels if x.type is discord.ChannelType.text]
-        super().__init__(placeholder="Выберите Канал.", max_values=1, min_values=1, options=options)
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        res = await interaction.client.bd.fetch({'guildid': self.interaction.guild.id}, category='logs')
-        channel = interaction.client.get_channel(int(self.values[0]))
-        if not res.status:
-            await interaction.client.bd.add({'guildid': interaction.guild.id, 'channel_id': int(self.values[0]), 'date': datetime.datetime.now().timestamp(), 'memberid': interaction.user.id}, category='logs')
-            embed = discord.Embed(color=discord.Color.green())
-            embed.title = 'Успешно.'
-            embed.description = f'Система логирования добавлена. Канал: <#{channel.id}>'
-            await interaction.followup.send(embed=embed, ephemeral=True)
-        else:
-            await interaction.followup.send('`Что то пошло не так...`', ephemeral=True)
-class Logs(discord.ui.View):
-    def __init__(self, *, timeout=120.0):
-        super().__init__(timeout=timeout)
-        self.add_item(LogsCallback())
-class LogsHelper(discord.ui.View):
-    def __init__(self, *, timeout=120.0, interaction: discord.Interaction):
-        super().__init__(timeout=timeout)
+                    await interaction.followup.send('`Что то пошло не так...`', ephemeral=True)
+        super().__init__(timeout=120.0)
         self.add_item(LogsChannels(interaction=interaction))
 class ConfirmRemove(discord.ui.View):
     def __init__(self, *, timeout=60.0):
@@ -353,141 +352,79 @@ class ConfirmRemove(discord.ui.View):
         embed.description = 'Функция успешно отключена.'
         await interaction.followup.send(embed=embed, ephemeral=True)
 # Music ----------------------------------------------------------------------------------------------------------------------
-class MusicCallback(discord.ui.Select):
-    def __init__(self, bot: commands.Bot, results: List[dict], player: lavalink.models.DefaultPlayer, ctx: commands.Context):
-        self.bot = bot
-        self.player = player
-        self.results = results
-        self.ctx = ctx
-        self.seconds = 0
-        self.name = ''
-        options = []
-        was = []
-        self.genseconds = False
-        self.update = True
-        self.forseek = False
-        for x in results:
-            if x['info']['author'] in was:
-                continue
-            was.append(x['info']['author'])
-            options.append(discord.SelectOption(label=f"{x['info']['author']}",emoji="🎵",description=f"{x['info']['title']}"))
-        super().__init__(placeholder="Выберите Трек.", max_values=1, min_values=1, options=options)
-    async def callback(self, interaction: discord.Interaction):
-        def thumb(ident: str):
-            return f'https://img.youtube.com/vi/{ident}/0.jpg'
-        async def forseek():
-            while True:
-                a = self.player.fetch('need_to_add')
-                if isinstance(a, int):
-                    self.player.delete('need_to_add')
-                    self.player.store(key='seconds', value=int(self.seconds))
-                    self.seconds += 10
-                await asyncio.sleep(0.5)
-        async def genseconds():
-            while True:
-                try:
-                    if self.seconds * 1000 > self.player.current.duration:
-                        self.seconds = 0
-                    if not self.player.paused:
-                        if self.name != self.player.current.title:
-                            self.name = self.player.current.title
-                            self.seconds = 0
-                        self.seconds += 0.5
-                        await asyncio.sleep(0.5)
-                    else:
-                        await asyncio.sleep(0.5)
-                except AttributeError:
-                    await asyncio.sleep(0.5)
-        if not self.genseconds:
-            self.bot.loop.create_task(genseconds())
-            self.genseconds = True
-        if not self.forseek:
-            self.bot.loop.create_task(forseek())
-            self.forseek = True
-        await interaction.response.defer()
-        for x in self.results:
-            if x['info']['author'] == self.values[0]:
-                track = lavalink.models.AudioTrack(x, interaction.user.id, recommended=True)
-                self.player.add(requester=interaction.user.id, track=track)
-                if not self.player.is_playing:
-                    try:
-                        a = await self.ctx.author.voice.channel.connect(cls=LavalinkVoiceClient, self_deaf=True)
-                        self.player.store('client', a)
-                        self.player.store('mess', interaction.message)
-                    except discord.errors.ClientException as e:
-                        pass
-                    await self.player.play()
-                    embed = discord.Embed(color=discord.Color.blurple())
-                    embed.title = 'Трек выбран.'
-                    tim = self.bot.format_time(int(str(self.player.current.duration)[:3]))
-                    embed.description = f'**Сейчас играет:**\n[**{x["info"]["title"]}**]({x["info"]["uri"]})\n`Длительность:` [**{tim}**]\n`Запросил:` **{self.bot.get_user(self.player.current.requester)}**\n\n**[**🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥**]**'
-                    embed.set_thumbnail(url=thumb(self.player.current.identifier))
-                    await interaction.message.edit(content='', embed=embed, view=MusicActions(bot=self.bot, ctx=self.ctx, player=self.player))
-                    return
-                else:
-                    embed = discord.Embed(color=discord.Color.blurple())
-                    embed.title = 'Трек Добавлен в очередь.'
-                    description = ''
-                    description += f'**Очередь:**\n'
-                    count = 0
-                    for j in self.player.queue:
-                        count += 1
-                        description += f'`{count}.` [**{j.title}**]({j.uri})\n`Запросил:` **{self.bot.get_user(int(j.requester))}**\n'
-                    embed.description = description
-                    await interaction.message.edit(content='', embed=embed, view=None)
-                    return
-class closeButton(discord.ui.Button):
-    def __init__(self, label, style):
-        super().__init__(label=label, style=style)
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.message.delete()
 class Music(discord.ui.View):
-    def __init__(self, *, timeout=60.0, bot: commands.Bot, results: List[dict], player: lavalink.DefaultPlayer, ctx: commands.Context):
-        super().__init__(timeout=timeout)
-        self.author = ctx.author
-        self.player = player
-        self.bot = bot
-        self.results = results
+    def __init__(self, *, timeout=60.0, results: List[dict], player: lavalink.DefaultPlayer, ctx: discord.Interaction):
         self.ctx = ctx
-        self.add_item(MusicCallback(bot=self.bot, results=self.results, player=self.player, ctx=self.ctx))
-        self.add_item(closeButton(label='❌Выход', style=discord.ButtonStyle.red))
+        super().__init__(timeout=timeout)
+        class MusicSelect(discord.ui.Select):
+            def __init__(self, results: List[dict], player: lavalink.models.DefaultPlayer):
+                self.player = player
+                options = []
+                used = []
+                self.results = results
+                for x in results:
+                    if x['info']['author'] in used:
+                        continue
+                    used.append(x['info']['author'])
+                    options.append(discord.SelectOption(label=f"{x['info']['author']}",emoji="🎵",description=f"{x['info']['title']}"))
+                super().__init__(placeholder="Выберите Трек.", max_values=1, min_values=1, options=options)
+            async def callback(self, interaction: discord.Interaction):
+                await interaction.response.defer()
+                if not interaction.user.voice:
+                    return await interaction.followup.send('`Вам нужно быть в голосовом канале, чтобы использовать это.`')
+                for x in self.results:
+                    if x['info']['author'] == self.values[0]:
+                        track = lavalink.AudioTrack(x, interaction.user.id)
+                        self.player.add(requester=interaction.user.id, track=track)
+                        if not self.player.is_playing:
+                            with suppress(discord.ClientException):
+                                self.player.client = await interaction.user.voice.channel.connect(cls=LavalinkVoiceClient, self_deaf=True)
+                            await self.player.play()
+                            view = MusicActions(bot=interaction.client, player=self.player)
+                            view.message = interaction.message
+                            self.player.message = interaction.message
+                            await interaction.message.edit(content='', view=view)
+                        else:
+                            embed = discord.Embed(color=discord.Color.blurple())
+                            embed.title = 'Трек Добавлен в очередь.'
+                            description = f'**Очередь:**\n'
+                            for i, j in enumerate(self.player.queue):
+                                description += f'`{i+1}.` [**{j.title}**]({j.uri})\n`Запросил:` **{interaction.client.get_user(int(j.requester))}**\n'
+                            embed.description = description
+                            await interaction.message.edit(content=None, embed=embed, view=None)
+                        break
+        self.add_item(MusicSelect(results=results, player=player))
+        self.add_item(closeButton())
     async def interaction_check(self, interaction: discord.Interaction):
-        if interaction.user.id != self.author.id:
+        if interaction.user.id != self.ctx.user.id:
             await interaction.response.send_message(embed=discord.Embed(title='Error', description='Вы не можете взаимодействовать с этим сообщением, т.к его вызвал другой человек.', color=discord.Color.red()), ephemeral=True)
             return False
         return True
     async def on_timeout(self):
-        self.stop()
+        with suppress(discord.NotFound):
+            for i in self.message.components:
+                if isinstance(i, discord.ui.Button):
+                    if i.custom_id == 'close':
+                        for x in self.children:
+                            x.disabled = True
+                        await self.message.edit(view=self)
 class MusicActions(discord.ui.View):
-    def __init__(self, *, timeout=None, bot: commands.Bot, player: lavalink.DefaultPlayer, ctx: commands.Context):
-        super().__init__(timeout=timeout)
-        self.ctx = ctx
+    def __init__(self, *, bot: commands.Bot, player: lavalink.DefaultPlayer):
+        super().__init__(timeout=None)
         self.bot = bot
-        self.ended = []
         self.edited = 0
-        self.mess = None
         self.player = player
-        self.paused = False
-        self.repeating = False
-        self.shuffled = False
-        self.bot.loop.create_task(self.update_())
-        self.id = self.player.guild_id
-    async def update_(self):
+        self.bot.loop.create_task(self._update_actions())
+    async def _update_actions(self):
         while True:
-            if self.mess is None:
-                self.mess = self.player.fetch('mess')
-            a = self.player.fetch('ended')
-            if a is not None:
-                self.ended.append(a)
-                self.player.delete('ended')
             for x in self.children:
                 if isinstance(x, discord.ui.Select):
-                    if len(self.ended) > 0 and len(self.ended) != self.edited:
-                        self.edited = len(self.ended)
+                    if len(self.player.ended) > 0 and len(self.player.ended) != self.edited:
+                        self.edited = len(self.player.ended)
                         options = []
                         used = []
                         y: lavalink.AudioTrack
-                        for y in self.ended:
+                        for y in self.player.ended:
                             if not y.author in used:
                                 used.append(y.author)
                                 options.append(discord.SelectOption(label=y.author,emoji="🎵",description=y.title))
@@ -495,61 +432,25 @@ class MusicActions(discord.ui.View):
                         x.placeholder = f'Найдено {len(options)} предыдущих треков.'
                         x.disabled = False
                         if self.player.is_playing:
-                            await self.mess.edit(view=self)
+                            await self.message.edit(view=self)
                 elif isinstance(x, discord.ui.Button):
                     if x.label == '⏭️':
-                        if len(self.player.queue) > 0 and not self.repeating:
+                        if len(self.player.queue) > 0 and not self.player.repeat:
                             if x.disabled:
                                 x.disabled = False
-                                await self.mess.edit(view=self)
-            await asyncio.sleep(0.5)
-            if not self.player.is_connected:
-                guild = self.bot.get_guild(int(self.id))
-                async for x in guild.audit_logs(limit=1, action=discord.AuditLogAction.member_disconnect):
-                    a = round(x.created_at.timestamp())
-                    b = round((datetime.datetime.utcnow() + datetime.timedelta(hours=3)).timestamp())
-                    if b - a > 25 or x.extra.count > 0:
-                        embed = discord.Embed(color=discord.Color.green())
-                        a: discord.Member = self.player.fetch(key=int(self.player.guild_id))
-                        if a is not None:
-                            self.player.delete(key=guild.id)
-                            embed.description = f'`Я покинула голосовой канал.`'
-                            try:
-                                embed.set_footer(text=f'Действие запрошено {a}.', icon_url=f'{a.avatar.url}')
-                            except Exception:
-                                embed.set_footer(text=f'Действие запрошено {a}.')
-                            embed.color = discord.Color.blurple()
-                        else:
-                            embed.description = '`Музыка больше не проигрывается так как меня отключили из голосового канала.`'
-                            try:
-                                embed.set_footer(text=f'{guild.name}', icon_url=f'{guild.icon.url}')
-                            except Exception:
-                                embed.set_footer(text=f'{guild.name}', icon_url=f'{self.bot.user.avatar.url}')
-                        mess = self.player.fetch('mess')
-                        await guild.change_voice_state(channel=None)
-                        self.player.channel_id = None
-                        client: LavalinkVoiceClient = self.player.fetch('client')
-                        try:
-                            await client.disconnect(force=True)
-                        except AttributeError:
-                            pass
-                        try:
-                            while True:
-                                await mess.edit(embed=embed, view=None)
-                                self.player.delete('mess')
-                                self.ended = []
-                                return
-                        except AttributeError:
-                            mess = self.player.fetch('mess')
-                            await asyncio.sleep(0.5)
-                        self.ended = []
-                        return
+                                await self.message.edit(view=self)
+                    elif x.label == '🔀':
+                        if len(self.player.queue) > 0 and not self.player.repeat:
+                            if x.disabled:
+                                x.disabled = False
+                                await self.message.edit(view=self)
+            await asyncio.sleep(2)
     @discord.ui.select(placeholder='Предыдущие треки не найдены.', options=[discord.SelectOption(label="None")], disabled=True)
     async def prevTracks(self, interaction:discord.Interaction, select: discord.ui.Select):
         if not interaction.user.voice or (self.player.is_connected and interaction.user.voice.channel.id != int(self.player.channel_id)):
             return await interaction.response.send_message(f'Подключитесь к каналу <#{self.player.channel_id}> чтобы использовать плеер.', ephemeral=True)
         x: lavalink.AudioTrack
-        for x in self.ended:
+        for x in self.player.ended:
             if x.author == select.values[0]:
                 data = {'track': x.track, 'info': {'identifier': x.identifier, 'isSeekable': x.is_seekable, 'author': x.author, 'length': x.duration, 'isStream': x.stream, 'position': 0, 'sourceName': 'youtube', 'title': x.title, 'uri': x.uri}}
                 self.player.add(requester=interaction.user.id, track=data)
@@ -562,7 +463,8 @@ class MusicActions(discord.ui.View):
         self.player.store(key=interaction.guild.id, value=interaction.user)
         self.player.queue.clear()
         await self.player.stop()
-        await self.ctx.voice_client.disconnect(force=True)
+        ctx = await interaction.client.get_context(interaction.message)
+        await ctx.voice_client.disconnect(force=True)
         await interaction.response.defer()
     @discord.ui.button(label="📖", style=discord.ButtonStyle.gray, disabled=False)
     async def lyrics(self, interaction:discord.Interaction, button: discord.ui.Button):
@@ -586,9 +488,8 @@ class MusicActions(discord.ui.View):
     async def pause_resume(self, interaction:discord.Interaction, button: discord.ui.Button):
         if not interaction.user.voice or (self.player.is_connected and interaction.user.voice.channel.id != int(self.player.channel_id)):
             return await interaction.response.send_message(f'Подключитесь к каналу <#{self.player.channel_id}> чтобы использовать плеер.', ephemeral=True)
-        if not self.paused:
+        if not self.player.paused:
             await self.player.set_pause(pause=True)
-            self.paused = True
             for x in self.children:
                 if isinstance(x, discord.ui.Button):
                     if x.label == '⏹️' or x.label == '📜' or x.label == '🔁':
@@ -599,10 +500,9 @@ class MusicActions(discord.ui.View):
             button.style = discord.ButtonStyle.blurple
             button.disabled = False
             button.label = '▶️'
-            await self.mess.edit(view=self)
+            await self.message.edit(view=self)
         else:
             await self.player.set_pause(pause=False)
-            self.paused = False
             for x in self.children:
                 if isinstance(x, discord.ui.Button):
                     if x.label == '🔀' and len(self.player.queue) == 0:
@@ -613,11 +513,11 @@ class MusicActions(discord.ui.View):
                         continue
                     x.disabled = False
                 elif isinstance(x, discord.ui.Select):
-                    if len(self.ended) > 0:
+                    if len(self.player.ended) > 0:
                         x.disabled = False
             button.style = discord.ButtonStyle.gray
             button.label = '⏸️'
-            await self.mess.edit(view=self)
+            await self.message.edit(view=self)
         await interaction.response.defer()
     @discord.ui.button(label="⏭️", style=discord.ButtonStyle.gray, disabled=True)
     async def next(self, interaction:discord.Interaction, button: discord.ui.Button):
@@ -626,15 +526,14 @@ class MusicActions(discord.ui.View):
         await self.player.skip()
         if len(self.player.queue) == 0:
             button.disabled = True
-            await self.mess.edit(view=self)
+            await self.message.edit(view=self)
         await interaction.response.defer()
     @discord.ui.button(label="🔁", style=discord.ButtonStyle.gray)
     async def repeat(self, interaction:discord.Interaction, button: discord.ui.Button):
         if not interaction.user.voice or (self.player.is_connected and interaction.user.voice.channel.id != int(self.player.channel_id)):
             return await interaction.response.send_message(f'Подключитесь к каналу <#{self.player.channel_id}> чтобы использовать плеер.', ephemeral=True)
-        if not self.repeating:
+        if not self.player.repeat:
             self.player.set_repeat(repeat=True)
-            self.repeating = True
             button.style = discord.ButtonStyle.blurple
             for x in self.children:
                 if isinstance(x, discord.ui.Button):
@@ -644,10 +543,9 @@ class MusicActions(discord.ui.View):
                 elif isinstance(x, discord.ui.Select):
                     if not x.disabled:
                         x.disabled = True
-            await self.mess.edit(view=self)
+            await self.message.edit(view=self)
         else:
             self.player.set_repeat(repeat=False)
-            self.repeating = False
             x: discord.ui.Button
             for x in self.children:
                 if isinstance(x, discord.ui.Button):
@@ -663,7 +561,7 @@ class MusicActions(discord.ui.View):
                         if not done:
                             x.disabled = False
             button.style = discord.ButtonStyle.gray
-            await self.mess.edit(view=self)
+            await self.message.edit(view=self)
         await interaction.response.defer()
     @discord.ui.button(label="📜", style=discord.ButtonStyle.gray)
     async def queue_(self, interaction:discord.Interaction, button: discord.ui.Button):
@@ -675,37 +573,35 @@ class MusicActions(discord.ui.View):
         count = 0
         for x in self.player.queue:
             count += 1
-            description += f'`{count}.` [**{x.title}**]({x.uri})\n`Запросил:` **{self.bot.get_user(x.requester)}**\n'
+            description += f'`{count}.` [**{x.title}**]({x.uri})\n`Запросил:` **{interaction.client.get_user(x.requester)}**\n'
         if description == '':
             description += 'В очереди нет треков.'
         embed.description = description
         await interaction.response.send_message(embed=embed, ephemeral=True)
-    @discord.ui.button(label="🔊", style=discord.ButtonStyle.gray)
-    async def volumeup(self, interaction:discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.voice or (self.player.is_connected and interaction.user.voice.channel.id != int(self.player.channel_id)):
-            return await interaction.response.send_message(f'Подключитесь к каналу <#{self.player.channel_id}> чтобы использовать плеер.', ephemeral=True)
-        await self.player.set_volume(self.player.volume + 10)
-        await interaction.response.defer()
-    @discord.ui.button(label="🔀", style=discord.ButtonStyle.gray, disabled=True)
-    async def shuffle(self, interaction:discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.voice or (self.player.is_connected and interaction.user.voice.channel.id != int(self.player.channel_id)):
-            return await interaction.response.send_message(f'Подключитесь к каналу <#{self.player.channel_id}> чтобы использовать плеер.', ephemeral=True)
-        if not self.shuffled:
-            self.player.set_shuffle(shuffle=True)
-            self.shuffled = True
-            button.style = discord.ButtonStyle.blurple
-            await self.mess.edit(view=self)
-        else:
-            self.player.set_shuffle(shuffle=False)
-            self.shuffled = False
-            button.style = discord.ButtonStyle.gray
-            await self.mess.edit(view=self)
-        await interaction.response.defer()
     @discord.ui.button(label="🔉", style=discord.ButtonStyle.gray)
     async def volumedown(self, interaction:discord.Interaction, button: discord.ui.Button):
         if not interaction.user.voice or (self.player.is_connected and interaction.user.voice.channel.id != int(self.player.channel_id)):
             return await interaction.response.send_message(f'Подключитесь к каналу <#{self.player.channel_id}> чтобы использовать плеер.', ephemeral=True)
         await self.player.set_volume(self.player.volume - 10)
+        await interaction.response.defer()
+    @discord.ui.button(label="🔀", style=discord.ButtonStyle.gray, disabled=True)
+    async def shuffle(self, interaction:discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.voice or (self.player.is_connected and interaction.user.voice.channel.id != int(self.player.channel_id)):
+            return await interaction.response.send_message(f'Подключитесь к каналу <#{self.player.channel_id}> чтобы использовать плеер.', ephemeral=True)
+        if not self.player.shuffle:
+            self.player.set_shuffle(shuffle=True)
+            button.style = discord.ButtonStyle.blurple
+            await self.message.edit(view=self)
+        else:
+            self.player.set_shuffle(shuffle=False)
+            button.style = discord.ButtonStyle.gray
+            await self.message.edit(view=self)
+        await interaction.response.defer()
+    @discord.ui.button(label="🔊", style=discord.ButtonStyle.gray)
+    async def volumeup(self, interaction:discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.voice or (self.player.is_connected and interaction.user.voice.channel.id != int(self.player.channel_id)):
+            return await interaction.response.send_message(f'Подключитесь к каналу <#{self.player.channel_id}> чтобы использовать плеер.', ephemeral=True)
+        await self.player.set_volume(self.player.volume + 10)
         await interaction.response.defer()
     @discord.ui.button(label="⏩", style=discord.ButtonStyle.gray)
     async def seek(self, interaction:discord.Interaction, button: discord.ui.Button):
@@ -742,8 +638,7 @@ class SetInfo(discord.ui.View):
                     try:
                         json.loads(str({"data": str(self.answer.value)}).replace("'", '"'))
                     except json.JSONDecodeError:
-                        await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
-                        return
+                        return await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
                     res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='bio')
                     if res.status:
                         await interaction.client.bd.remove(res.value, category='bio')
@@ -759,8 +654,7 @@ class SetInfo(discord.ui.View):
                     try:
                         json.loads(str({"data": str(self.answer.value)}).replace("'", '"'))
                     except json.JSONDecodeError:
-                        await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
-                        return
+                        return await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
                     res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='age')
                     if res.status:
                         await interaction.client.bd.remove(res.value, category='age')
@@ -776,8 +670,7 @@ class SetInfo(discord.ui.View):
                     try:
                         json.loads(str({"data": str(self.answer.value)}).replace("'", '"'))
                     except json.JSONDecodeError:
-                        await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
-                        return
+                        return await interaction.response.send_message(f'Что то пошло не так... Попробуйте снова.', ephemeral=True)
                     res = await interaction.client.bd.fetch({'memberid': interaction.user.id, 'guildid': interaction.guild.id}, category='gender')
                     if res.status:
                         await interaction.client.bd.remove(res.value, category='gender')
@@ -806,7 +699,9 @@ class SetInfo(discord.ui.View):
             return False
         return True
     async def on_timeout(self):
-        self.stop()
+        for x in self.children:
+            x.disabled = True
+        await self.message.edit(view=self)
 # Tickets ----------------------------------------------------------------------------------------------------------
 class TicketClose(discord.ui.View):
     def __init__(self) -> None:
@@ -816,7 +711,7 @@ class TicketClose(discord.ui.View):
     async def close(self, interaction:discord.Interaction, button: discord.ui.Button):
         if not interaction.user.id in self.aboba_value:
             self.aboba_value.append(interaction.user.id)
-            return await interaction.response.send_message(content='`Вы точно хотите закрыть этот тикет?`', ephemeral=True)
+            return await interaction.response.send_message(content='`Вы точно хотите закрыть этот тикет?\nНажмите на кнопку еще раз если да.`', ephemeral=True)
         button.disabled = True
         await interaction.message.edit(view=self)
         self.aboba_value.remove(interaction.user.id)
@@ -826,11 +721,9 @@ class TicketClose(discord.ui.View):
             await interaction.channel.set_permissions(target=member, overwrite=discord.PermissionOverwrite(send_messages=False, read_messages=True))
         await interaction.response.send_message(content='`Канал удалится через 10 секунд...`')
         await asyncio.sleep(10)
-        try:
+        with suppress(discord.NotFound):
             await interaction.client.bd.remove({'channelid': interaction.channel.id}, category='ticketusers')
             await interaction.channel.delete()
-        except discord.errors.NotFound:
-            return
 class TicketButtons(discord.ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=None)
@@ -933,11 +826,14 @@ class RoomActions(discord.ui.View):
             except asyncio.TimeoutError:
                 self.used.remove(interaction.user.id)
                 return
-            member = interaction.guild.get_member(int(msg.content.replace("<@", '').replace(">", '')))
+            try:
+                member = interaction.guild.get_member(int(msg.content.replace("<@", '').replace(">", '')))
+            except ValueError:
+                self.used.remove(interaction.user.id)
+                return await interaction.followup.send(f'`Неверный формат. Попробуйте еще раз.`', ephemeral=True)
             if member.id == interaction.user.id:
                 self.used.remove(interaction.user.id)
-                await interaction.followup.send(f'`Вы не можете забанить самого себя.`', ephemeral=True)
-                return
+                return await interaction.followup.send(f'`Вы не можете забанить самого себя.`', ephemeral=True)
             if member is None:
                 self.used.remove(interaction.user.id)
                 await interaction.followup.send(f'`Не удалось найти этого пользователя.`', ephemeral=True)
@@ -978,7 +874,11 @@ class RoomActions(discord.ui.View):
             except asyncio.TimeoutError:
                 self.used.remove(interaction.user.id)
                 return
-            member = interaction.guild.get_member(int(msg.content.replace("<@", '').replace(">", '')))
+            try:
+                member = interaction.guild.get_member(int(msg.content.replace("<@", '').replace(">", '')))
+            except ValueError:
+                self.used.remove(interaction.user.id)
+                return await interaction.followup.send(f'`Неверный формат. Попробуйте еще раз.`', ephemeral=True)
             if member.id == interaction.user.id:
                 self.used.remove(interaction.user.id)
                 return await interaction.followup.send(f'`Вы не можете добавить самого себя как владельца.`', ephemeral=True)
@@ -1044,8 +944,7 @@ class RoomActions(discord.ui.View):
                 return
             if len(msg.content) > 99:
                 self.used.remove(interaction.user.id)
-                await interaction.response.send_message('`Укажите название длиной до 100 символов.`', ephemeral=True)
-                return
+                return await interaction.response.send_message('`Укажите название длиной до 100 символов.`', ephemeral=True)
             await interaction.user.voice.channel.edit(name=msg.content)
             self.used.remove(interaction.user.id)
             await interaction.followup.send(f'`Вы успешно переименовали комнату.`', ephemeral=True)
@@ -1053,10 +952,10 @@ class RoomActions(discord.ui.View):
             await interaction.response.send_message('`У вас не хватает прав сделать это действие!`', ephemeral=True)
     @discord.ui.button(label=">", style=discord.ButtonStyle.gray, disabled=True, custom_id='6')
     async def dummy1(self, interaction:discord.Interaction, button: discord.ui.Button):
-        pass
+        return
     @discord.ui.button(label=">", style=discord.ButtonStyle.gray, disabled=True, custom_id='7')
     async def dummy2(self, interaction:discord.Interaction, button: discord.ui.Button):
-        pass
+        return
     @discord.ui.button(label="🎙️", style=discord.ButtonStyle.gray, custom_id='8')
     async def muteunmute(self, interaction:discord.Interaction, button: discord.ui.Button):
         res = await interaction.client.bd.fetch({'guildid': interaction.guild.id}, category='rooms')
@@ -1082,7 +981,11 @@ class RoomActions(discord.ui.View):
             except asyncio.TimeoutError:
                 self.used.remove(interaction.user.id)
                 return
-            member = interaction.guild.get_member(int(msg.content.replace("<@", '').replace(">", '')))
+            try:
+                member = interaction.guild.get_member(int(msg.content.replace("<@", '').replace(">", '')))
+            except ValueError:
+                self.used.remove(interaction.user.id)
+                return await interaction.followup.send(f'`Неверный формат. Попробуйте еще раз.`', ephemeral=True)
             if member.id == interaction.user.id:
                 await interaction.followup.send(f'`Вы не можете взаимодействовать с самим собой.`', ephemeral=True)
                 self.used.remove(interaction.user.id)
@@ -1101,10 +1004,10 @@ class RoomActions(discord.ui.View):
                 await interaction.followup.send(f'`Вы успешно лишили права голоса {member}`', ephemeral=True)
     @discord.ui.button(label="<", style=discord.ButtonStyle.gray, disabled=True, custom_id='9')
     async def dummy3(self, interaction:discord.Interaction, button: discord.ui.Button):
-        pass
+        return
     @discord.ui.button(label="<", style=discord.ButtonStyle.gray, disabled=True, custom_id='10')
     async def dummy4(self, interaction:discord.Interaction, button: discord.ui.Button):
-        pass
+        return
 # Settings -----------------------------------------------------------------------------------------
 class OnSettings(discord.ui.View):
     def __init__(self) -> None:
@@ -1165,7 +1068,7 @@ class OnSettings(discord.ui.View):
                             # --------------------------------------------
                             embed = ViolaEmbed(ctx=await interaction.client.get_context(interaction.message))
                             embed.title = 'Приватные комнаты.'
-                            description = f'`👪 Изменить лимит канала.`\t`🚮 Забрать/Выдать доступ.`\n`💁‍♂️ Передать владельца.`\t`🚪 Скрыть/Открыть комнату.`\n`📝 Изменить название.`\t`🎙️ Заглушить/разглушить кого-то.`'
+                            description = f'`👪 Изменить лимит канала.`\n`🚮 Забрать/Выдать доступ.`\n`💁‍♂️ Передать владельца.`\n`🚪 Скрыть/Открыть комнату.`\n`📝 Изменить название.`\n`🎙️ Заглушить/разглушить кого-то.`'
                             embed.description = description
                             await channel2.send(embed=embed, view=RoomActions())
                             # --------------------------------------------
@@ -1505,3 +1408,8 @@ class ViolaEmbed(discord.Embed):
         }
         # self.set_author(icon_url=urls[self.format], name=titles[self.format])
         self.color = colors[self.format]
+class closeButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label='❌Выход', style=discord.ButtonStyle.red, custom_id='close')
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.message.delete()
