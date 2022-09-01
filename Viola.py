@@ -2,12 +2,8 @@
 import discord, os, requests, json, datetime, sys, asyncio, aiohttp, re, aiofiles
 from types import SimpleNamespace
 from discord.ext import commands
-from discord.ext.commands.errors import ExtensionNotLoaded, DisabledCommand
+from discord.ext.commands.errors import ExtensionError, DisabledCommand
 from Config.core import Viola, ViolaHelp
-
-# random.seed(69420)
-# print("".join("deHlorW! "[0 if i == 10 else 1 if i == 1 else 2 if i == 0 else 3 if i in [2,3,9] else 4 if i in [4,7] else 5 if i == 8 else 6 if i == 6 else 7 if i == 11 else 8 ] for i in range(12)))
-# print(''.join(chr(random.randrange(256) ^ c) for c in bytes.fromhex('EA8760D97CD68CB754E490D68D376C1997BBF9BD363BCE05CD85') if random.randrange(2)))
 
 token_rx = re.compile(r'([a-zA-Z0-9]{24}\.[a-zA-Z0-9]{6}\.[a-zA-Z0-9_\-]{27}|mfa\.[a-zA-Z0-9_\-]{84})')
 
@@ -26,6 +22,7 @@ tc = aiohttp.TraceConfig()
 tc.on_request_end.append(callback)
 
 bot = Viola(
+    from_mobile=True,
     http_trace=tc,
     case_insensitive=True,
     command_prefix=guild_based_prefix, 
@@ -34,7 +31,7 @@ bot = Viola(
     strip_after_prefix=True,
     help_command=ViolaHelp(), 
     allowed_mentions=discord.AllowedMentions(everyone=False, replied_user=True, roles=False, users=True),
-    activity=discord.Game(name="хз во че поиграть"),
+    activity=discord.Game(name="Brawl Stars"),
     application_id=924357517306380378, # 931873675454595102-beta, 924357517306380378-original
     status=discord.Status.online,
     enable_debug_events=True
@@ -42,25 +39,25 @@ bot = Viola(
 
 @commands.is_owner()
 @bot.command(description="Доступ к этой команде есть только у моего создателя.")
-async def cog(ctx: commands.Context, *extension):
-    if str(extension[0]).lower() == "reload":
+async def cog(ctx: commands.Context, mode: str, extension: str):
+    if mode.lower() == "reload":
         try:
-            await bot.reload_extension(f"Cogs.{extension[1]}")
-            await ctx.send(f"`Succesfully reloaded` **{extension[1]}**")
-        except ExtensionNotLoaded:
-            await ctx.send("`Extension could not be found.`")
-    elif str(extension[0]).lower() == 'load':
+            await bot.reload_extension(f"Cogs.{extension}")
+            await ctx.send(f"`Перезагружено:` **{extension}**")
+        except ExtensionError as e:
+            await ctx.send(f"`Не получилось перезагрузить.\n{e}`")
+    elif mode.lower() == 'load':
         try:
-            await bot.load_extension(f"Cogs.{extension[1]}")
-            await ctx.send(f"`Succesfully loaded` **{extension[1]}**")
-        except ExtensionNotLoaded:
-            await ctx.send("`Extension could not be found.`")
-    elif str(extension[0]).lower() == 'unload':
+            await bot.load_extension(f"Cogs.{extension}")
+            await ctx.send(f"`Загружено:` **{extension}**")
+        except ExtensionError as e:
+            await ctx.send(f"`Не получилось перезагрузить.\n{e}`")
+    elif mode.lower() == 'unload':
         try:
-            await bot.unload_extension(f"Cogs.{extension[1]}")
-            await ctx.send(f"`Succesfully loaded` **{extension[1]}**")
-        except ExtensionNotLoaded:
-            await ctx.send("`Extension could not be found.`")
+            await bot.unload_extension(f"Cogs.{extension}")
+            await ctx.send(f"`Выгружено:` **{extension}**")
+        except ExtensionError as e:
+            await ctx.send(f"`Не получилось перезагрузить.\n{e}`")
 
 @commands.is_owner()
 @bot.command(description="Доступ к этой команде есть только у моего создателя.")
@@ -71,8 +68,11 @@ async def poll(ctx: commands.Context) -> None: # самая полезная к�
 @commands.is_owner()
 @bot.command(description="Доступ к этой команде есть только у моего создателя.")
 async def sync(ctx: commands.Context) -> None:
-    await bot.tree.sync()
-    await ctx.channel.send('done')
+    try:
+        await bot.tree.sync()
+        await ctx.channel.send('`Дерево команд синхронизировано.`')
+    except (discord.HTTPException, Exception) as e:
+        await ctx.channel.send(f'`Невозможно синхронизировать дерево команд:\n{e}`')
 
 @bot.before_invoke
 async def checkForDisabled(ctx: commands.Context) -> None:

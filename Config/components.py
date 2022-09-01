@@ -2,7 +2,7 @@ from contextlib import suppress
 import traceback, datetime, json
 import discord, asyncio, random
 from discord.ext import commands
-from typing import List
+from typing import List, Dict, Any
 import emoji, lavalink
 from youtube_transcript_api import YouTubeTranscriptApi
 import youtube_transcript_api
@@ -353,47 +353,44 @@ class ConfirmRemove(discord.ui.View):
         await interaction.followup.send(embed=embed, ephemeral=True)
 # Music ----------------------------------------------------------------------------------------------------------------------
 class Music(discord.ui.View):
-    def __init__(self, *, timeout=60.0, results: List[dict], player: lavalink.DefaultPlayer, ctx: discord.Interaction):
+    def __init__(self, *, timeout=60.0, options: List[discord.SelectOption], player: lavalink.DefaultPlayer, ctx: discord.Interaction, results: List[Dict[Any, Any]]):
         self.ctx = ctx
         super().__init__(timeout=timeout)
         class MusicSelect(discord.ui.Select):
-            def __init__(self, results: List[dict], player: lavalink.models.DefaultPlayer):
+            def __init__(self, options: List[discord.SelectOption], player: lavalink.models.DefaultPlayer, results: List[Dict[Any, Any]]):
                 self.player = player
-                options = []
-                used = []
+                self.opts = options
                 self.results = results
-                for x in results:
-                    if x['info']['author'] in used:
-                        continue
-                    used.append(x['info']['author'])
-                    options.append(discord.SelectOption(label=f"{x['info']['author']}",emoji="🎵",description=f"{x['info']['title']}"))
                 super().__init__(placeholder="Выберите Трек.", max_values=1, min_values=1, options=options)
             async def callback(self, interaction: discord.Interaction):
                 await interaction.response.defer()
                 if not interaction.user.voice:
                     return await interaction.followup.send('`Вам нужно быть в голосовом канале, чтобы использовать это.`')
-                for x in self.results:
-                    if x['info']['author'] == self.values[0]:
-                        track = lavalink.AudioTrack(x, interaction.user.id)
-                        self.player.add(requester=interaction.user.id, track=track)
-                        if not self.player.is_playing:
-                            with suppress(discord.ClientException):
-                                self.player.client = await interaction.user.voice.channel.connect(cls=LavalinkVoiceClient, self_deaf=True)
-                            await self.player.play()
-                            view = MusicActions(bot=interaction.client, player=self.player)
-                            view.message = interaction.message
-                            self.player.message = interaction.message
-                            await interaction.message.edit(content='', view=view)
-                        else:
-                            embed = discord.Embed(color=discord.Color.blurple())
-                            embed.title = 'Трек Добавлен в очередь.'
-                            description = f'**Очередь:**\n'
-                            for i, j in enumerate(self.player.queue):
-                                description += f'`{i+1}.` [**{j.title}**]({j.uri})\n`Запросил:` **{interaction.client.get_user(int(j.requester))}**\n'
-                            embed.description = description
-                            await interaction.message.edit(content=None, embed=embed, view=None)
-                        break
-        self.add_item(MusicSelect(results=results, player=player))
+                try:
+                    for x, y in enumerate(self.opts):
+                        if y.label == self.values[0]:
+                            track = lavalink.AudioTrack(self.results[x], interaction.user.id)
+                            self.player.add(requester=interaction.user.id, track=track)
+                            if not self.player.is_playing:
+                                with suppress(discord.ClientException):
+                                    self.player.client = await interaction.user.voice.channel.connect(cls=LavalinkVoiceClient, self_deaf=True)
+                                await self.player.play()
+                                view = MusicActions(bot=interaction.client, player=self.player)
+                                view.message = interaction.message
+                                self.player.message = interaction.message
+                                await interaction.message.edit(content='', view=view)
+                            else:
+                                embed = discord.Embed(color=discord.Color.blurple())
+                                embed.title = 'Трек Добавлен в очередь.'
+                                description = f'**Очередь:**\n'
+                                for i, j in enumerate(self.player.queue):
+                                    description += f'`{i+1}.` [**{j.title}**]({j.uri})\n`Запросил:` **{interaction.guild.get_member(int(j.requester))}**\n'
+                                embed.description = description
+                                await interaction.message.edit(content=None, embed=embed, view=None)
+                            break
+                except Exception:
+                    print(traceback.format_exc())
+        self.add_item(MusicSelect(options=options, player=player, results=results))
         self.add_item(closeButton())
     async def interaction_check(self, interaction: discord.Interaction):
         if interaction.user.id != self.ctx.user.id:
@@ -412,15 +409,13 @@ class MusicActions(discord.ui.View):
     def __init__(self, *, bot: commands.Bot, player: lavalink.DefaultPlayer):
         super().__init__(timeout=None)
         self.bot = bot
-        self.edited = 0
         self.player = player
         self.bot.loop.create_task(self._update_actions())
     async def _update_actions(self):
         while True:
             for x in self.children:
                 if isinstance(x, discord.ui.Select):
-                    if len(self.player.ended) > 0 and len(self.player.ended) != self.edited:
-                        self.edited = len(self.player.ended)
+                    if len(self.player.ended) > 0:
                         options = []
                         used = []
                         y: lavalink.AudioTrack
@@ -449,7 +444,6 @@ class MusicActions(discord.ui.View):
     async def prevTracks(self, interaction:discord.Interaction, select: discord.ui.Select):
         if not interaction.user.voice or (self.player.is_connected and interaction.user.voice.channel.id != int(self.player.channel_id)):
             return await interaction.response.send_message(f'Подключитесь к каналу <#{self.player.channel_id}> чтобы использовать плеер.', ephemeral=True)
-        x: lavalink.AudioTrack
         for x in self.player.ended:
             if x.author == select.values[0]:
                 data = {'track': x.track, 'info': {'identifier': x.identifier, 'isSeekable': x.is_seekable, 'author': x.author, 'length': x.duration, 'isStream': x.stream, 'position': 0, 'sourceName': 'youtube', 'title': x.title, 'uri': x.uri}}
@@ -463,8 +457,7 @@ class MusicActions(discord.ui.View):
         self.player.store(key=interaction.guild.id, value=interaction.user)
         self.player.queue.clear()
         await self.player.stop()
-        ctx = await interaction.client.get_context(interaction.message)
-        await ctx.voice_client.disconnect(force=True)
+        await self.player.client.disconnect(force=True)
         await interaction.response.defer()
     @discord.ui.button(label="📖", style=discord.ButtonStyle.gray, disabled=False)
     async def lyrics(self, interaction:discord.Interaction, button: discord.ui.Button):
@@ -570,10 +563,8 @@ class MusicActions(discord.ui.View):
         embed = discord.Embed(color=discord.Color.blurple())
         embed.title = 'Очередь:'
         description = ''
-        count = 0
-        for x in self.player.queue:
-            count += 1
-            description += f'`{count}.` [**{x.title}**]({x.uri})\n`Запросил:` **{interaction.client.get_user(x.requester)}**\n'
+        for i, x in self.player.queue:
+            description += f'`{i+1}.` [**{x.title}**]({x.uri})\n`Запросил:` **{interaction.client.get_user(x.requester) if interaction.client.get_user(x.requester) != None else "Undefined"}**\n'
         if description == '':
             description += 'В очереди нет треков.'
         embed.description = description
@@ -607,14 +598,8 @@ class MusicActions(discord.ui.View):
     async def seek(self, interaction:discord.Interaction, button: discord.ui.Button):
         if not interaction.user.voice or (self.player.is_connected and interaction.user.voice.channel.id != int(self.player.channel_id)):
             return await interaction.response.send_message(f'Подключитесь к каналу <#{self.player.channel_id}> чтобы использовать плеер.', ephemeral=True)
-        self.player.store(key='need_to_add', value=10)
-        while True:
-            seconds = self.player.fetch(key='seconds')
-            if isinstance(seconds, int):
-                self.player.delete(key='seconds')
-                break
-            await asyncio.sleep(0.3)
-        await self.player.seek(position=(seconds + 10)*1000)
+        await self.player.seek(position = (self.player.seconds * 1000) + 10000)
+        self.player.seconds += 10
         await interaction.response.defer()
 # SetInfo -------------------------------------------------------------------------------------------------------------------
 class SetInfo(discord.ui.View):
@@ -1377,7 +1362,7 @@ class LavalinkVoiceClient(discord.VoiceClient):
         self.lavalink.player_manager.create(guild_id=self.channel.guild.id)
         await self.channel.guild.change_voice_state(channel=self.channel, self_mute=self_mute, self_deaf=self_deaf)
     async def disconnect(self, *, force: bool = False) -> None:
-        player: lavalink.DefaultPlayer = self.lavalink.player_manager.get(self.channel.guild.id)
+        player = self.lavalink.player_manager.get(self.channel.guild.id)
         if not force and not player.is_connected:
             return
         await self.channel.guild.change_voice_state(channel=None)

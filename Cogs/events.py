@@ -1,6 +1,6 @@
 import discord, requests, json, datetime, os, asyncio, traceback
 from discord.ext import commands, tasks
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from discord.ext.commands.errors import CommandNotFound, MemberNotFound, DisabledCommand
 from discord.ext.commands import has_permissions, MissingPermissions, MissingRequiredArgument
 from Config.components import ViolaEmbed
@@ -40,6 +40,10 @@ class events(commands.Cog):
     @commands.Cog.listener()
     async def on_socket_raw_receive(self, payload: str):
         return
+    
+    @commands.Cog.listener()
+    async def on_socket_event_type(event_type: str):
+        print(event_type)
     
     @commands.Cog.listener()
     async def on_ready(self) -> None:
@@ -314,5 +318,10 @@ class events(commands.Cog):
                         except Exception:
                             embed.set_footer(text=f'{after.guild.name}', icon_url=f'{self.bot.user.avatar.url}')
                         await channel.send(f'`[{datetime.datetime.now().strftime("%H:%M:%S")}]` **{before.author.name}**#{before.author.discriminator} Изменил свое сообщение в канале <#{before.channel.id}>', embed=embed)
+    
+    @commands.Cog.listener()
+    async def on_member_ban(self, guild: discord.Guild, member: Union[discord.User, discord.Member]):
+        channel = await self.bot.get_log_channel(guild.id)
+
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(events(bot))

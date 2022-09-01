@@ -1,5 +1,5 @@
-import traceback, os, io, lavalink
-import discord, asyncio, aiohttp
+import traceback, os, io, lavalink, sys
+import discord, asyncio, aiohttp, requests
 import datetime, contextlib
 from typing import Optional, Dict, Any, List, Union, AsyncIterator
 from discord.ext import commands
@@ -7,11 +7,15 @@ from Config.utils import Paginator
 from Config.assets.database import MongoDB
 from Config.components import TicketButtons, TicketClose, RoomActions, ViolaEmbed
 from PIL import Image, ImageFont, ImageDraw
+from discord.gateway import DiscordWebSocket, _log
+
 cwd = os.path.join(os.getcwd(), 'Config')
 
 class Viola(commands.Bot):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        if kwargs.pop('from_mobile', False):
+            DiscordWebSocket.identify = MobileWebSocket.identify
         self.bd = MongoDB() # database connection
         self.session: aiohttp.ClientSession = None # filled in setup_hook
         self.lavalink: lavalink.Client = None
@@ -19,9 +23,8 @@ class Viola(commands.Bot):
         print(f'[{datetime.datetime.now().strftime("%H:%M:%S")}] [Viola/INFO]: Connected to database successfully.')
     
     async def sync(self) -> None:
-        # guild = discord.Object(id=1000466637478178910)
-        # self.tree.copy_global_to(guild=guild)
-        await self.tree.sync() # guild=guild
+        # self.tree.copy_global_to(guild=discord.Object(id=1000466637478178910))
+        await self.tree.sync() # guild=discord.Object(id=1000466637478178910)
 
     async def setup_hook(self) -> None:
         persistents = [TicketButtons(), TicketClose(), RoomActions()]
@@ -69,55 +72,57 @@ class Viola(commands.Bot):
             return args
     
     async def get_welcome_image(self, member: discord.Member, format: str = 'welcome') -> discord.File:
-        if not member.avatar:
-            avatar_url = 'https://raw.githubusercontent.com/AdvertiseYourServer/Default-Discord-Avatars/master/4.png'
-        else:
-            avatar_url = member.avatar.url
-        im = Image.open(os.path.join(cwd, 'assets', 'image.png')).convert('RGBA')
-        mainfont = ImageFont.truetype(os.path.join(cwd, 'assets', 'welcome_font.ttf'), size=25)
-        async with self.session.get(avatar_url) as response:
-            avatar = Image.open(io.BytesIO(await response.content.read())).resize((170, 170), 0).convert('RGBA')
-            mask_im = Image.new("L", avatar.size, 0)
-            draw = ImageDraw.Draw(mask_im)
-            ellipse = Image.open(os.path.join(cwd, 'assets', 'rgb.png')).convert('RGBA').resize((210, 210))
-            mask = Image.open(os.path.join(cwd, 'assets', 'rgbmask.png')).convert('L').resize((210, 210))
-            text = ImageDraw.Draw(im)
-            if format == 'welcome':
-                text.text((220, 70), text='Добро пожаловать!', font=mainfont, fill=(255, 255, 255, 255))
-            elif format == 'bye':
-                text.text((220, 70), text='С тобой было приятно иметь дело!', font=mainfont, fill=(255, 255, 255, 255))
+        def sync_img(self, member=member, format=format):
+            if not member.avatar:
+                avatar_url = 'https://raw.githubusercontent.com/AdvertiseYourServer/Default-Discord-Avatars/master/4.png'
             else:
-                raise ValueError('Invalid format')
-            im.paste(ellipse, (2, 22), mask=mask)
-            draw.ellipse((0, 0, 170, 170), fill=255)
-            im.paste(avatar, (20, 42), mask=mask_im)
-            draw.ellipse((0, 0, 100, 100), fill=255)
-            self.imgforfont= im.crop((210, 0, 750, 250))
-            def set_size(fontsize: int) -> Image.Image:
-                tmp= self.imgforfont.copy()
-                font = ImageFont.truetype(os.path.join(cwd, 'assets', 'welcome_font.ttf'), size=fontsize)
-                imdraw = ImageDraw.Draw(tmp)
-                imdraw.text(text=f'{member.display_name}#{member.discriminator}', xy=(8, 115), font=font)
-                pixels = tmp.load()
-                breaked = False
-                for i in range(475, 530):
-                    for j in range(100, 150):
-                        if pixels[i, j] == (255, 255, 255, 255):
-                            breaked = True
-                            break
-                        if breaked:
-                            break
-                if not breaked:
-                    self.imgforfont = tmp
-                    return
+                avatar_url = member.avatar.url
+            im = Image.open(os.path.join(cwd, 'assets', 'image.png')).convert('RGBA')
+            mainfont = ImageFont.truetype(os.path.join(cwd, 'assets', 'welcome_font.ttf'), size=25)
+            with requests.get(avatar_url) as response: # requests moment
+                avatar = Image.open(io.BytesIO(response.content)).resize((170, 170), 0).convert('RGBA')
+                mask_im = Image.new("L", avatar.size, 0)
+                draw = ImageDraw.Draw(mask_im)
+                ellipse = Image.open(os.path.join(cwd, 'assets', 'rgb.png')).convert('RGBA').resize((210, 210))
+                mask = Image.open(os.path.join(cwd, 'assets', 'rgbmask.png')).convert('L').resize((210, 210))
+                text = ImageDraw.Draw(im)
+                if format == 'welcome':
+                    text.text((220, 70), text='Добро пожаловать!', font=mainfont, fill=(255, 255, 255, 255))
+                elif format == 'bye':
+                    text.text((220, 70), text='Пока!', font=mainfont, fill=(255, 255, 255, 255))
                 else:
-                    set_size(fontsize=fontsize-1)
-            self.loop.run_in_executor(None, set_size, 50)
-            im.paste(self.imgforfont, (210, 0))
-            image_bytes = io.BytesIO()
-            im.save(image_bytes, format='PNG')
-            image_bytes.seek(0)
-            return discord.File(image_bytes, filename=f'{format}User.png')
+                    raise ValueError('Invalid format')
+                im.paste(ellipse, (2, 22), mask=mask)
+                draw.ellipse((0, 0, 170, 170), fill=255)
+                im.paste(avatar, (20, 42), mask=mask_im)
+                draw.ellipse((0, 0, 100, 100), fill=255)
+                self.imgforfont = im.crop((210, 0, 750, 250))
+                def set_size(fontsize: int) -> Image.Image:
+                    tmp = self.imgforfont.copy()
+                    font = ImageFont.truetype(os.path.join(cwd, 'assets', 'welcome_font.ttf'), size=fontsize)
+                    imdraw = ImageDraw.Draw(tmp)
+                    imdraw.text(text=f'{member.display_name}#{member.discriminator}', xy=(8, 115), font=font)
+                    pixels = tmp.load()
+                    breaked = False
+                    for i in range(475, 530):
+                        for j in range(100, 150):
+                            if pixels[i, j] == (255, 255, 255, 255):
+                                breaked = True
+                                break
+                            if breaked:
+                                break
+                    if not breaked:
+                        self.imgforfont = tmp
+                        return
+                    else:
+                        set_size(fontsize=fontsize-1)
+                set_size(50)
+                im.paste(self.imgforfont, (210, 0))
+                image_bytes = io.BytesIO()
+                im.save(image_bytes, format='PNG')
+                image_bytes.seek(0)
+                return discord.File(image_bytes, filename=f'{format}User.png')
+        return await self.loop.run_in_executor(None, sync_img, self, member, format)
     
     async def voice_members(self, bots: bool = False) -> AsyncIterator[discord.Member]:
         for g in self.guilds:
@@ -179,3 +184,40 @@ class ViolaHelp(commands.HelpCommand):
     
     async def command_not_found(self, command) -> None:
         return f'Команда {command} не найдена.'
+    
+class MobileWebSocket(DiscordWebSocket):
+    def __init__(self):
+        super().__init__()
+    
+    async def identify(self):
+        payload = {
+            'op': self.IDENTIFY,
+            'd': {
+                'token': self.token,
+                'properties': {
+                    '$os': 'win32',
+                    '$browser': 'Discord Android',
+                    '$device': 'Discord Android',
+                    '$referrer': '',
+                    '$referring_domain': ''
+                },
+                'compress': True,
+                'large_threshold': 250,
+                'v': 3
+            }
+        }
+        if self.shard_id is not None and self.shard_count is not None:
+            payload['d']['shard'] = [self.shard_id, self.shard_count]
+        state = self._connection
+        if state._activity is not None or state._status is not None:
+            payload['d']['presence'] = {
+                'status': state._status,
+                'game': state._activity,
+                'since': 0,
+                'afk': False
+            }
+        if state._intents is not None:
+            payload['d']['intents'] = state._intents.value
+        await self.call_hooks('before_identify', self.shard_id, initial=self._initial_identify)
+        await self.send_as_json(payload)
+        _log.info('Shard ID %s has sent the IDENTIFY payload.', self.shard_id)
